@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/welcome_screen.dart';
 
 void main() {
   runApp(const DuyuruApp());
@@ -12,7 +13,16 @@ class DuyuruApp extends StatelessWidget {
     return MaterialApp(
       title: 'Duyuru Sistemi',
       debugShowCheckedModeBanner: false,
-      home: Scaffold(body: Center(child: Text('SOA Mimarisi Hazır!'))),
+      theme: ThemeData(
+        primarySwatch: Colors.indigo,
+        fontFamily: 'Roboto',
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6366F1),
+          brightness: Brightness.light,
+        ),
+      ),
+      home: const WelcomeScreen(), 
     );
   }
 }
