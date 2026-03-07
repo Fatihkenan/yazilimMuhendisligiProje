@@ -5,26 +5,17 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+// ignore: unused_import
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:yazilimmuhendislgiproje/main.dart';
+import 'package:yazilimmuhendislgiproje/main.dart'; 
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  testWidgets('Uygulama basariyla basliyor mu testi', (WidgetTester tester) async {
+    // Sadece DuyuruApp'i baslat
     await tester.pumpWidget(const DuyuruApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Ekranda WelcomeScreen'deki yazilardan biri var mi kontrol et
+    expect(find.text('Duyuru Sistemi'), findsWidgets);
   });
 }
