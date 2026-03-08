@@ -14,13 +14,12 @@ class DuyuruApp extends StatelessWidget {
       title: 'Duyuru Sistemi',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.indigo,
-        fontFamily: 'Roboto',
-        useMaterial3: true,
+        useMaterial3: true, 
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
+          seedColor: const Color(0xFF6366F1), 
           brightness: Brightness.light,
         ),
+        fontFamily: 'Roboto',
       ),
       home: const WelcomeScreen(), 
     );
