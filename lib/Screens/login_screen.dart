@@ -1,5 +1,7 @@
+//login_screen.dart 
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
+import 'student_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,10 +32,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
+
     await Future.delayed(const Duration(seconds: 1)); 
+
+
 
     if (!mounted) return;
     setState(() => _isLoading = false);
+
 
     // المهمة YAZ-31: رسالة نجاح بأسلوب Material 3
     ScaffoldMessenger.of(context).showSnackBar(
@@ -42,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
         behavior: SnackBarBehavior.floating,
         backgroundColor: Colors.green,
       ),
+
     );
   }
 
