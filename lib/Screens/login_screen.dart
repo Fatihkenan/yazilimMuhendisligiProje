@@ -1,5 +1,7 @@
+//login_screen.dart 
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
+import 'student_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,13 +32,15 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    // محاكاة تسجيل الدخول لأن المهمة هي واجهات ثابتة فقط
-    await Future.delayed(const Duration(seconds: 1)); 
+    await Future.delayed(const Duration(seconds: 1));
 
     if (!mounted) return;
     setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Giriş başarılı! (Statik Arayüz)'), backgroundColor: Colors.green)
+
+    // الانتقال إلى صفحة الطالب الرئيسية
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const StudentHomeScreen()),
     );
   }
 
