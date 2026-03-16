@@ -1,4 +1,3 @@
-//welcome_screen.dart
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
@@ -32,19 +31,65 @@ class WelcomeScreen extends StatelessWidget {
                         color: Colors.white,
                         shape: BoxShape.circle,
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 20, offset: const Offset(0, 10)),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
                         ],
                       ),
-                      child: const Icon(Icons.notifications_active, size: 60, color: Color(0xFF6366F1)),
+                      // "Odak" ismine uygun hedef/odak ikonu kullandık
+                      child: const Icon(
+                        Icons.center_focus_strong,
+                        size: 60,
+                        color: Color(0xFF6366F1),
+                      ),
                     ),
                     const SizedBox(height: 40),
-                    const Text('Duyuru Sistemi', style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.2)),
+                    const Text(
+                      'Odaksınıf',
+                      style: TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    const Text('Öğretmen ve Öğrenciler için\nModern İletişim Platformu', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, color: Colors.white70, height: 1.5)),
+                    const Text(
+                      'Butik Dershaneler İçin\nÖzel Duyuru,İletişim ve Eğitim Platformu',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.white70,
+                        height: 1.5,
+                      ),
+                    ),
                     const SizedBox(height: 60),
-                    _buildButton(context, 'Giriş Yap', Icons.login, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen()))),
+                    _buildButton(
+                      context,
+                      'Giriş Yap',
+                      Icons.login,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 20),
-                    _buildButton(context, 'Hesap Oluştur', Icons.person_add, () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterScreen())), isSecondary: true),
+                    _buildButton(
+                      context,
+                      'Hesap Oluştur',
+                      Icons.person_add,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RegisterScreen(),
+                        ),
+                      ),
+                      isSecondary: true,
+                    ),
                   ],
                 ),
               ),
@@ -55,14 +100,23 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildButton(BuildContext context, String text, IconData icon, VoidCallback onPressed, {bool isSecondary = false}) {
+  Widget _buildButton(
+    BuildContext context,
+    String text,
+    IconData icon,
+    VoidCallback onPressed, {
+    bool isSecondary = false,
+  }) {
     return SizedBox(
       width: double.infinity,
       height: 56,
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: 24),
-        label: Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+        label: Text(
+          text,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: isSecondary ? Colors.white : const Color(0xFF6366F1),
           foregroundColor: isSecondary ? const Color(0xFF6366F1) : Colors.white,
@@ -70,7 +124,9 @@ class WelcomeScreen extends StatelessWidget {
           shadowColor: Colors.black.withValues(alpha: 0.3),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: isSecondary ? const BorderSide(color: Colors.white, width: 2) : BorderSide.none,
+            side: isSecondary
+                ? const BorderSide(color: Colors.white, width: 2)
+                : BorderSide.none,
           ),
         ),
       ),
