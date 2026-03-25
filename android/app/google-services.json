@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "127718735081",
+    "project_id": "odaksinif",
+    "storage_bucket": "odaksinif.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:127718735081:android:eda859649333a0099cc478",
+        "android_client_info": {
+          "package_name": "com.example.yazilimmuhendislgiproje"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMtISZ_WJbK9QeslZIUNYjcPVLlebBkHE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

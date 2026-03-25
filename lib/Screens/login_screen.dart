@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
 import 'student_home_screen.dart';
+import '../services/auth_service.dart'; // YENİ: Servisimizi import ettik
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,11 +12,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _tenantCodeController = TextEditingController(); // Yeni: Kurum Kodu
+
+  // YENİ: Servisimizden bir nesne oluşturuyoruz
+  final AuthService _authService = AuthService();
+
+  final _tenantCodeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  final _tenantCodeFocus = FocusNode(); // Yeni: Kurum Kodu Odaklanma
+  final _tenantCodeFocus = FocusNode();
   final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
 
@@ -33,37 +38,59 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // YENİDEN YAZILAN GERÇEK FIREBASE GİRİŞ FONKSİYONU
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
 
-    // API çağrısı simülasyonu
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      // Firebase Auth üzerinden giriş yapmayı deniyoruz
+      await _authService.loginUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (!mounted) return;
 
-    // Task YAZ-31: Material 3 success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Giriş başarılı! (Statik Arayüz)'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.green,
-      ),
-    );
+      // Giriş başarılıysa yeşil mesaj göster
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş başarılı! Hoş geldiniz.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+        ),
+      );
 
-    // Ana sayfaya yönlendirme
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const StudentHomeScreen()),
-    );
+      // Ana sayfaya yönlendir
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const StudentHomeScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      // Hata olursa kırmızı mesajla kullanıcıyı uyar
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Giriş başarısız. E-posta veya şifrenizi kontrol edin.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () =>
-          FocusScope.of(context).unfocus(), // Task YAZ-30: Close keyboard
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         body: Container(
           width: double.infinity,
@@ -78,7 +105,6 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                // Task YAZ-30: Prevent Overflow
                 padding: const EdgeInsets.all(32),
                 child: Container(
                   padding: const EdgeInsets.all(32),
@@ -122,7 +148,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 32),
 
-                        // YENİ: KURUM KODU ALANI
                         TextFormField(
                           controller: _tenantCodeController,
                           focusNode: _tenantCodeFocus,
@@ -136,9 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             filled: true,
-                            fillColor: const Color(
-                              0xFFEEF2FF,
-                            ), // Dikkat çekmesi için hafif mavi arkaplan
+                            fillColor: const Color(0xFFEEF2FF),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: const BorderSide(

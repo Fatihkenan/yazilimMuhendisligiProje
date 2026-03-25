@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
+import '../services/auth_service.dart'; // Servisimizi import ettik
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -10,14 +11,17 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _inviteCodeController =
-      TextEditingController(); // Yeni Eklendi: Davet Kodu
+
+  // Servisimizden bir nesne oluşturuyoruz
+  final AuthService _authService = AuthService();
+
+  final _inviteCodeController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  final _inviteCodeFocus = FocusNode(); // Yeni Eklendi
+  final _inviteCodeFocus = FocusNode();
   final _nameFocus = FocusNode();
   final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
@@ -44,25 +48,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  // YENİDEN YAZILAN GERÇEK FIREBASE KAYIT FONKSİYONU
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
 
-    // API çağrısı simülasyonu
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      // AuthService içindeki registerUser fonksiyonunu çağırıyoruz
+      await _authService.registerUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        adSoyad: _nameController.text.trim(),
+        kurumKodu: _inviteCodeController.text.trim(),
+      );
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Kayıt başarılı! Giriş yapabilirsiniz.'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-    );
+      if (!mounted) return;
+
+      // Başarılı olursa yeşil mesaj göster ve Login ekranına at
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kayıt başarılı! Giriş yapabilirsiniz.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    } catch (e) {
+      // Hata olursa kırmızı mesajla kullanıcıya hatayı göster
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Kayıt hatası: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -139,7 +167,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 const SizedBox(height: 32),
 
-                                // ROL SEÇİMİ (Üste alındı çünkü davet kodunun mantığını belirliyor)
+                                // ROL SEÇİMİ (Şimdilik UI'da duruyor ama backend'de ezilip 'student' olacak)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -193,7 +221,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 const SizedBox(height: 16),
 
-                                // YENİ: DAVET KODU ALANI
                                 TextFormField(
                                   controller: _inviteCodeController,
                                   focusNode: _inviteCodeFocus,
@@ -216,9 +243,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     filled: true,
-                                    fillColor: const Color(
-                                      0xFFEEF2FF,
-                                    ), // Dikkat çekmesi için hafif farklı bir arkaplan
+                                    fillColor: const Color(0xFFEEF2FF),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
                                       borderSide: const BorderSide(
