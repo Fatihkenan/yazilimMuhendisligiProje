@@ -1,7 +1,9 @@
+//login_screen.dart
 import 'package:flutter/material.dart';
-import 'register_screen.dart';
-import 'student_home_screen.dart';
-import '../services/auth_service.dart'; // YENİ: Servisimizi import ettik
+import 'package:yazilimmuhendislgiproje/Screens/register_screen.dart';
+import 'package:yazilimmuhendislgiproje/Screens/student_home_screen.dart';
+import 'package:yazilimmuhendislgiproje/Screens/teacher_home_screen.dart';
+import 'package:yazilimmuhendislgiproje/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,8 +14,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-
-  // YENİ: Servisimizden bir nesne oluşturuyoruz
   final AuthService _authService = AuthService();
 
   final _tenantCodeController = TextEditingController();
@@ -38,54 +38,49 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // YENİDEN YAZILAN GERÇEK FIREBASE GİRİŞ FONKSİYONU
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
+  if (!_formKey.currentState!.validate()) return;
+  setState(() => _isLoading = true);
 
-    setState(() => _isLoading = true);
+  try {
+    await _authService.loginUser(
+      email: _emailController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
 
-    try {
-      // Firebase Auth üzerinden giriş yapmayı deniyoruz
-      await _authService.loginUser(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
+    if (!mounted) return;
 
-      if (!mounted) return;
+    final isTeacher = true; // مؤقتاً لاختبار صفحة المعلم
 
-      // Giriş başarılıysa yeşil mesaj göster
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Giriş başarılı! Hoş geldiniz.'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.green,
-        ),
-      );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Giriş başarılı! Hoş geldiniz.'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green,
+      ),
+    );
 
-      // Ana sayfaya yönlendir
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const StudentHomeScreen()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      // Hata olursa kırmızı mesajla kullanıcıyı uyar
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Giriş başarısız. E-posta veya şifrenizi kontrol edin.',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            // ignore: dead_code
+            isTeacher ? TeacherHomeScreen() : StudentHomeScreen(),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Giriş başarısız. E-posta veya şifrenizi kontrol edin.'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.red,
+      ),
+    );
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 32),
 
+                        // Kurum Kodu
                         TextFormField(
                           controller: _tenantCodeController,
                           focusNode: _tenantCodeFocus,
@@ -170,18 +166,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          validator: (value) => (value == null || value.isEmpty)
-                              ? 'Kurum kodu gerekli'
-                              : null,
+                          validator: (value) =>
+                              (value == null || value.isEmpty)
+                                  ? 'Kurum kodu gerekli'
+                                  : null,
                         ),
                         const SizedBox(height: 16),
 
+                        // E-posta
                         TextFormField(
                           controller: _emailController,
                           focusNode: _emailFocus,
                           textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) =>
-                              _passwordFocus.requestFocus(),
+                          onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
                           decoration: InputDecoration(
                             labelText: 'E-posta',
                             prefixIcon: const Icon(Icons.email),
@@ -193,13 +190,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) =>
                               (value == null ||
-                                  value.isEmpty ||
-                                  !value.contains('@'))
-                              ? 'Geçerli bir e-posta girin'
-                              : null,
+                                      value.isEmpty ||
+                                      !value.contains('@'))
+                                  ? 'Geçerli bir e-posta girin'
+                                  : null,
                         ),
                         const SizedBox(height: 16),
 
+                        // Şifre
                         TextFormField(
                           controller: _passwordController,
                           focusNode: _passwordFocus,
@@ -225,12 +223,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             filled: true,
                             fillColor: const Color(0xFFF9FAFB),
                           ),
-                          validator: (value) => (value == null || value.isEmpty)
-                              ? 'Şifre gerekli'
-                              : null,
+                          validator: (value) =>
+                              (value == null || value.isEmpty)
+                                  ? 'Şifre gerekli'
+                                  : null,
                         ),
                         const SizedBox(height: 24),
 
+                        // Giriş Yap butonu
                         SizedBox(
                           width: double.infinity,
                           height: 52,
@@ -264,6 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
 
+                        // Kayıt ol linki
                         TextButton(
                           onPressed: () => Navigator.pushReplacement(
                             context,
