@@ -12,7 +12,7 @@ class MainFeedScreen extends StatelessWidget {
       ),
       // Task 6: StreamBuilder kullanımı
       body: StreamBuilder<List<Map<String, String>>>(
-        // محاكاة لبيانات قادمة من السيرفر
+        // Sunucudan gelecek test verileri (Mock Data)
         stream: Stream.value([
           {"hoca": "Dr. Ahmet Yılmaz", "mesaj": "Arkadaşlar, vize sınavı konuları sisteme yüklendi."},
           {"hoca": "Asistan Elif Kaya", "mesaj": "Ödev teslimlerini yarın saat 17:00'ye kadar yapınız."},
@@ -47,8 +47,7 @@ class MainFeedScreen extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           Icon(Icons.favorite_border, size: 20, color: Colors.grey),
-                          SizedBox(width: 20),
-                          Icon(Icons.comment_outlined, size: 20, color: Colors.grey),
+                          // Odaksınıf projesinin "tek yönlü duyuru" amacına sadık kalmak için yorum ikonu kaldırıldı.
                         ],
                       ),
                     ],
