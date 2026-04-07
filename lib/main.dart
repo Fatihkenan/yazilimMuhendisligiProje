@@ -28,7 +28,7 @@ class DuyuruApp extends StatelessWidget {
         ),
         fontFamily: 'Roboto',
       ),
-      home: const TeacherHomeScreen(),
+      home: const WelcomeScreen(),
     );
   }
 }
