@@ -39,48 +39,51 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-  if (!_formKey.currentState!.validate()) return;
-  setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+    
+    try {
+      // TODO: auth_service.dart içine tenantCode parametresi de eklenmeli!
+      final userData = await _authService.loginUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        // tenantCode: _tenantCodeController.text.trim(), // Backend güncellenince burayı açın
+      );
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş başarılı! Hoş geldiniz.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+        ),
+      );
 
-  try {
-    await _authService.loginUser(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
+      // Şimdilik test için true bırakıldı ancak backend'den gelen role göre güncellenmeli.
+      // Örnek: final isTeacher = userData.role == 'teacher';
+      final isTeacher = true; 
 
-    if (!mounted) return;
-
-    final isTeacher = true; // مؤقتاً لاختبار صفحة المعلم
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Giriş başarılı! Hoş geldiniz.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            // ignore: dead_code
-            isTeacher ? TeacherHomeScreen() : StudentHomeScreen(),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Giriş başarısız. E-posta veya şifrenizi kontrol edin.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              isTeacher ? const TeacherHomeScreen() : const StudentHomeScreen(),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş başarısız. Bilgilerinizi kontrol edin.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -189,9 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             fillColor: const Color(0xFFF9FAFB),
                           ),
                           validator: (value) =>
-                              (value == null ||
-                                      value.isEmpty ||
-                                      !value.contains('@'))
+                              (value == null || value.isEmpty || !value.contains('@'))
                                   ? 'Geçerli bir e-posta girin'
                                   : null,
                         ),
