@@ -2,11 +2,13 @@
 
 class MessageModel {
   final String id;
-  final String classroomId; // Bu duyuru hangi sınıfa atıldı?
-  final String teacherId; // Hangi öğretmen attı?
+  final String classroomId;
+  final String teacherId;
   final String title;
   final String content;
   final DateTime createdAt;
+  final String? imageUrl; // Sprint 4: Medya özelliği eklendi
+  final String? pdfUrl; // Sprint 4: Medya özelliği eklendi
 
   MessageModel({
     required this.id,
@@ -15,6 +17,8 @@ class MessageModel {
     required this.title,
     required this.content,
     required this.createdAt,
+    this.imageUrl,
+    this.pdfUrl,
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> map, String documentId) {
@@ -28,6 +32,8 @@ class MessageModel {
       createdAt: map['createdAt'] != null
           ? (map['createdAt'] as dynamic).toDate()
           : DateTime.now(),
+      imageUrl: map['imageUrl'], // Veritabanından okuma
+      pdfUrl: map['pdfUrl'], // Veritabanından okuma
     );
   }
 
@@ -38,6 +44,8 @@ class MessageModel {
       'title': title,
       'content': content,
       'createdAt': createdAt,
+      'imageUrl': imageUrl, // Veritabanına yazma
+      'pdfUrl': pdfUrl, // Veritabanına yazma
     };
   }
 }

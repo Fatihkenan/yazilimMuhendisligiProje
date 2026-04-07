@@ -3,6 +3,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/classroom_model.dart';
+import '../models/message_model.dart'; // Duyuru modeli eklendi
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -44,19 +45,18 @@ class FirestoreService {
     // 2. ADIM: Firestore'da yeni bir döküman referansı oluştur (ID almak için)
     final docRef = _firestore.collection('classrooms').doc();
 
-    // 3. ADIM: Modeli Oluştur (Task 1'de yazdığımız modeli kullanıyoruz)
+    // 3. ADIM: Modeli Oluştur
     final newClass = ClassroomModel(
       id: docRef.id,
       name: name,
       teacherId: teacherId,
-      inviteCode: inviteCode, // Garantili benzersiz kod
-      studentIds: [], // Başlangıçta sınıf boş
+      inviteCode: inviteCode,
+      studentIds: [],
     );
 
     // 4. ADIM: Veritabanına Yaz!
     await docRef.set(newClass.toMap());
 
-    // İşlem bitince oluşturulan sınıfı geri döndür
     return newClass;
   }
 
@@ -66,28 +66,60 @@ class FirestoreService {
     required String studentId,
   }) async {
     try {
-      // 1. ADIM: Girilen kodu veritabanında ara
       final snapshot = await _firestore
           .collection('classrooms')
           .where('inviteCode', isEqualTo: inviteCode.trim().toUpperCase())
           .get();
 
-      // 2. ADIM: Kod veritabanında yoksa hata fırlat
       if (snapshot.docs.isEmpty) {
         throw Exception('Geçersiz sınıf kodu! Lütfen kodu kontrol edin.');
       }
 
-      // 3. ADIM: Sınıf bulunduysa dökümanı al
       final classroomDoc = snapshot.docs.first;
 
-      // 4. ADIM: Öğrencinin UID'sini sınıfın studentIds listesine ekle
-      // NOT: arrayUnion kullanıyoruz ki aynı öğrenci 2 kere eklenmesin!
       await classroomDoc.reference.update({
         'studentIds': FieldValue.arrayUnion([studentId]),
       });
     } catch (e) {
-      // Hata mesajını UI tarafına fırlatıyoruz (SnackBar'da göstermek için)
       throw Exception('Sınıfa katılırken bir hata oluştu: $e');
     }
+  }
+
+  // --- SPRINT 4: Duyuruyu (Medya Linkleriyle) Firestore'a Kaydet ---
+  Future<void> sendAnnouncement({
+    required String classroomId,
+    required String teacherId,
+    required String title,
+    required String content,
+    String? imageUrl,
+    String? pdfUrl,
+  }) async {
+    final docRef = _firestore.collection('announcements').doc();
+
+    await docRef.set({
+      'id': docRef.id,
+      'classroomId': classroomId,
+      'teacherId': teacherId,
+      'title': title,
+      'content': content,
+      'createdAt':
+          FieldValue.serverTimestamp(), // Sunucu saati ile garantili kayıt
+      'imageUrl': imageUrl,
+      'pdfUrl': pdfUrl,
+    });
+  }
+
+  // --- SPRINT 4: Canlı Duyuru Akışı (Real-Time StreamBuilder İçin) ---
+  Stream<List<MessageModel>> getAnnouncements(String classroomId) {
+    return _firestore
+        .collection('announcements')
+        .where('classroomId', isEqualTo: classroomId)
+        .orderBy('createdAt', descending: true) // En yeni duyuru en üstte
+        .snapshots() // Değişiklikleri anlık dinler
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => MessageModel.fromMap(doc.data(), doc.id))
+              .toList();
+        });
   }
 }
