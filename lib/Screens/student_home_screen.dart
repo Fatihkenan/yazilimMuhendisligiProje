@@ -1,10 +1,10 @@
 // student_home_screen.dart
 import 'package:flutter/material.dart';
+import 'package:yazilimmuhendislgiproje/Screens/profile_screen.dart';
 
 class StudentHomeScreen extends StatelessWidget {
   const StudentHomeScreen({super.key});
 
-  // Dummy veriler (Firebase yok, statik)
   static const List<Map<String, dynamic>> _announcements = [
     {
       'title': 'Matematik Sınavı Hakkında',
@@ -79,10 +79,23 @@ class StudentHomeScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Colors.white,
-                      child: Icon(Icons.person, color: Color(0xFF6366F1), size: 28),
+                    // ← تعديل YAZ-38: الضغط على الأفاتار يفتح صفحة البروفيل
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ProfileScreen(
+                            userName: 'Ahmet Yıldız',
+                            userEmail: 'ahmet@test.com',
+                            kurumKodu: 'ODAK-001',
+                          ),
+                        ),
+                      ),
+                      child: const CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.person, color: Color(0xFF6366F1), size: 28),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     const Expanded(
@@ -165,7 +178,7 @@ class StudentHomeScreen extends StatelessWidget {
                           itemCount: _announcements.length,
                           itemBuilder: (context, index) {
                             final a = _announcements[index];
-                            return _buildAnnouncementCard(a);
+                            return _buildAnnouncementCard(context, a);
                           },
                         ),
                       ),
@@ -189,7 +202,7 @@ class StudentHomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAnnouncementCard(Map<String, dynamic> a) {
+  Widget _buildAnnouncementCard(BuildContext context, Map<String, dynamic> a) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
