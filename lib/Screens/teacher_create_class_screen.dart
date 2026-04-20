@@ -1,11 +1,14 @@
-// teacher_create_class_screen.dart
+// lib/screens/teacher_create_class_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/firestore_service.dart';
 
 class TeacherCreateClassScreen extends StatefulWidget {
   const TeacherCreateClassScreen({super.key});
 
   @override
-  State<TeacherCreateClassScreen> createState() => _TeacherCreateClassScreenState();
+  State<TeacherCreateClassScreen> createState() =>
+      _TeacherCreateClassScreenState();
 }
 
 class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
@@ -13,6 +16,9 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
   final _classNameController = TextEditingController();
   final _classNameFocus = FocusNode();
   bool _isLoading = false;
+
+  // Servisimizi tanımlıyoruz
+  final FirestoreService _firestoreService = FirestoreService();
 
   @override
   void dispose() {
@@ -23,20 +29,50 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
 
   Future<void> _createClass() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
 
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      // 1. Giriş yapmış olan öğretmenin ID'sini alıyoruz
+      final User? currentUser = FirebaseAuth.instance.currentUser;
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (currentUser == null) {
+        throw Exception("Oturum açmış bir kullanıcı bulunamadı!");
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sınıf başarıyla oluşturuldu!'),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.pop(context);
+      // 2. Senin yazdığın Task 2 servisini çağırıyoruz
+      await _firestoreService.createClass(
+        name: _classNameController.text.trim(),
+        teacherId: currentUser.uid,
+      );
+
+      if (!mounted) return;
+
+      // 3. Başarı mesajı
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Sınıf başarıyla oluşturuldu ve veritabanına kaydedildi!',
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      // Sayfayı kapat
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Hata oluştu: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -63,7 +99,11 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
                     ),
                     const Text(
                       'Yeni Sınıf Oluştur',
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -80,7 +120,7 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
+                              color: Colors.black.withOpacity(0.1),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             ),
@@ -95,20 +135,33 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
                                 width: 80,
                                 height: 80,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                                  color: const Color(
+                                    0xFF6366F1,
+                                  ).withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: const Icon(Icons.class_, size: 44, color: Color(0xFF6366F1)),
+                                child: const Icon(
+                                  Icons.class_,
+                                  size: 44,
+                                  color: Color(0xFF6366F1),
+                                ),
                               ),
                               const SizedBox(height: 24),
                               const Text(
                                 'Sınıf Oluştur',
-                                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1F2937),
+                                ),
                               ),
                               const SizedBox(height: 8),
                               const Text(
                                 'Yeni sınıfınız için bir isim girin',
-                                style: TextStyle(fontSize: 15, color: Color(0xFF6B7280)),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFF6B7280),
+                                ),
                               ),
                               const SizedBox(height: 32),
                               TextFormField(
@@ -119,12 +172,17 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'Sınıf Adı',
                                   hintText: 'Örn: YKS Sayısal-1',
-                                  prefixIcon: const Icon(Icons.drive_file_rename_outline),
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  prefixIcon: const Icon(
+                                    Icons.drive_file_rename_outline,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   filled: true,
                                   fillColor: const Color(0xFFF9FAFB),
                                 ),
-                                validator: (value) => (value == null || value.isEmpty)
+                                validator: (value) =>
+                                    (value == null || value.isEmpty)
                                     ? 'Sınıf adı gerekli'
                                     : null,
                               ),
@@ -137,16 +195,27 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF6366F1),
                                     foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                     elevation: 2,
                                   ),
                                   child: _isLoading
                                       ? const SizedBox(
                                           height: 20,
                                           width: 20,
-                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
                                         )
-                                      : const Text('Oluştur', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      : const Text(
+                                          'Oluştur',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ],

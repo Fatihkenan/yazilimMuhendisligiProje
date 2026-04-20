@@ -1,4 +1,4 @@
-//login_screen.dart
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:yazilimmuhendislgiproje/Screens/register_screen.dart';
 import 'package:yazilimmuhendislgiproje/Screens/student_home_screen.dart';
@@ -39,48 +39,51 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-  if (!_formKey.currentState!.validate()) return;
-  setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-  try {
-    await _authService.loginUser(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
+    try {
+      // TODO: auth_service.dart içine tenantCode parametresi de eklenmeli!
+      // 'userData' kullanılmadığı için sadece await ile login işlemini tetikliyoruz
+      await _authService.loginUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        // tenantCode: _tenantCodeController.text.trim(), // Backend güncellenince burayı açın
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    final isTeacher = true; // مؤقتاً لاختبار صفحة المعلم
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş başarılı! Hoş geldiniz.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+        ),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Giriş başarılı! Hoş geldiniz.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.green,
-      ),
-    );
+      // Şimdilik test için true bırakıldı ancak backend'den gelen role göre güncellenmeli.
+      const isTeacher = true; // 'final' yerine 'const' kullanıldı
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            // ignore: dead_code
-            isTeacher ? TeacherHomeScreen() : StudentHomeScreen(),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Giriş başarısız. E-posta veya şifrenizi kontrol edin.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red,
-      ),
-    );
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              isTeacher ? const TeacherHomeScreen() : const StudentHomeScreen(),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Giriş başarısız. Bilgilerinizi kontrol edin.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -166,10 +169,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          validator: (value) =>
-                              (value == null || value.isEmpty)
-                                  ? 'Kurum kodu gerekli'
-                                  : null,
+                          validator: (value) => (value == null || value.isEmpty)
+                              ? 'Kurum kodu gerekli'
+                              : null,
                         ),
                         const SizedBox(height: 16),
 
@@ -178,7 +180,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _emailController,
                           focusNode: _emailFocus,
                           textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
+                          onFieldSubmitted: (_) =>
+                              _passwordFocus.requestFocus(),
                           decoration: InputDecoration(
                             labelText: 'E-posta',
                             prefixIcon: const Icon(Icons.email),
@@ -190,10 +193,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) =>
                               (value == null ||
-                                      value.isEmpty ||
-                                      !value.contains('@'))
-                                  ? 'Geçerli bir e-posta girin'
-                                  : null,
+                                  value.isEmpty ||
+                                  !value.contains('@'))
+                              ? 'Geçerli bir e-posta girin'
+                              : null,
                         ),
                         const SizedBox(height: 16),
 
@@ -223,10 +226,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             filled: true,
                             fillColor: const Color(0xFFF9FAFB),
                           ),
-                          validator: (value) =>
-                              (value == null || value.isEmpty)
-                                  ? 'Şifre gerekli'
-                                  : null,
+                          validator: (value) => (value == null || value.isEmpty)
+                              ? 'Şifre gerekli'
+                              : null,
                         ),
                         const SizedBox(height: 24),
 

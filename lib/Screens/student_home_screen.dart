@@ -4,9 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shimmer/shimmer.dart';
 import '../models/message_model.dart';
-import 'login_screen.dart';
 import 'announcement_detail_screen.dart';
-import 'profile_screen.dart'; // Saib'in eklediği profil sayfası importu
+import 'profile_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -28,7 +27,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     _fetchEnrolledClasses();
   }
 
-  // --- ÖĞRENCİNİN SINIFLARINI GETİR (Gerçek Veri) ---
+  // --- FİREBASE HATA YAKALAMALI GÜNCEL KOD (main) ---
   Future<void> _fetchEnrolledClasses() async {
     final String currentUserId = _auth.currentUser!.uid;
 
@@ -44,6 +43,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sınıflar yüklenemedi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -61,7 +68,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // --- SAİB'İN HEADER KISMI (Profil Tıklaması Eklendi) ---
+              // --- SAİB'İN PROFİL TIKLAMALI HEADER KISMI (saeb-sprint4) ---
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Row(
@@ -70,7 +77,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const ProfileScreen(), // Yeni yazdığımız ProfileScreen'e gider
+                          builder: (context) => const ProfileScreen(),
                         ),
                       ),
                       child: const CircleAvatar(
@@ -102,7 +109,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     const Stack(
                       children: [
                         Icon(Icons.notifications, color: Colors.white, size: 30),
-                        // Bildirim noktası şimdilik statik, ileride geliştirilebilir
                         Positioned(
                           right: 0,
                           top: 0,
@@ -114,7 +120,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 ),
               ),
 
-              // --- FİREBASE CANLI VERİ BAĞLANTISI ---
+              // --- FİREBASE CANLI VERİ BAĞLANTISI VE LİSTE ---
               Expanded(
                 child: _isLoading
                     ? _buildShimmerLoading()
@@ -139,7 +145,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
                               return Column(
                                 children: [
-                                  // --- SAİB'İN İSTATİSTİK KARTI (Gerçek Veriye Bağlandı!) ---
+                                  // --- SAİB'İN İSTATİSTİK KARTI (Gerçek Veri) ---
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 20),
                                     child: Container(
@@ -154,7 +160,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                         children: [
                                           _buildStat('$totalAnnouncements', 'Toplam'),
                                           Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.4)),
-                                          _buildStat('0', 'Yeni'), // İleride okunma durumu eklenirse güncellenir
+                                          _buildStat('0', 'Yeni'), 
                                           Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.4)),
                                           _buildStat('$totalAnnouncements', 'Okundu'),
                                         ],
@@ -217,7 +223,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Saib'in İstatistik Kutusu
   Widget _buildStat(String value, String label) {
     return Column(
       children: [
@@ -227,7 +232,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Belal'in Yükleme Efekti
   Widget _buildShimmerLoading() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
@@ -244,7 +248,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Öğrenci Sınıfı Yoksa
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -258,7 +261,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Senin Yazdığın Gerçek Veri Çeken Duyuru Kartı
   Widget _buildAnnouncementCard(MessageModel message) {
     final dateStr = "${message.createdAt.day}/${message.createdAt.month}/${message.createdAt.year}";
 
@@ -284,7 +286,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4)),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
         child: Padding(
@@ -301,20 +307,41 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       color: const Color(0xFF6366F1).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.campaign, color: Color(0xFF6366F1), size: 24),
+                    child: const Icon(
+                      Icons.campaign,
+                      color: Color(0xFF6366F1),
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(message.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1F2937))),
+                        Text(
+                          message.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.calendar_today_outlined, size: 14, color: Color(0xFF9CA3AF)),
+                            const Icon(
+                              Icons.calendar_today_outlined,
+                              size: 14,
+                              color: Color(0xFF9CA3AF),
+                            ),
                             const SizedBox(width: 4),
-                            Text(dateStr, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -338,18 +365,29 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         child: OutlinedButton.icon(
                           onPressed: () {},
                           icon: const Icon(Icons.image, size: 18),
-                          label: const Text('Görsel Eklendi', style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
+                          label: const Text(
+                            'Görsel Eklendi',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6366F1),
+                          ),
                         ),
                       ),
-                    if (message.imageUrl != null && message.pdfUrl != null) const SizedBox(width: 8),
+                    if (message.imageUrl != null && message.pdfUrl != null)
+                      const SizedBox(width: 8),
                     if (message.pdfUrl != null)
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () {},
                           icon: const Icon(Icons.picture_as_pdf, size: 18),
-                          label: const Text('PDF Eklendi', style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF8B5CF6)),
+                          label: const Text(
+                            'PDF Eklendi',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF8B5CF6),
+                          ),
                         ),
                       ),
                   ],
