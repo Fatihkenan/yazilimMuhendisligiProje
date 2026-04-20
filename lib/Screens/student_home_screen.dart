@@ -2,10 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shimmer/shimmer.dart'; // Belal'in paketi
+import 'package:shimmer/shimmer.dart';
 import '../models/message_model.dart';
-import 'login_screen.dart';
-import 'announcement_detail_screen.dart'; // Detay sayfası importu
+import 'announcement_detail_screen.dart';
+import 'profile_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -27,7 +27,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     _fetchEnrolledClasses();
   }
 
-  // --- ÖĞRENCİNİN SINIFLARINI GETİR (İzolasyon) ---
+  // --- FİREBASE HATA YAKALAMALI GÜNCEL KOD (main) ---
   Future<void> _fetchEnrolledClasses() async {
     final String currentUserId = _auth.currentUser!.uid;
 
@@ -54,15 +54,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     }
   }
 
-  Future<void> _signOut() async {
-    await _auth.signOut();
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,18 +68,22 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Header Kısmı
+              // --- SAİB'İN PROFİL TIKLAMALI HEADER KISMI (saeb-sprint4) ---
               Padding(
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Colors.white,
-                      child: Icon(
-                        Icons.person,
-                        color: Color(0xFF6366F1),
-                        size: 28,
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ProfileScreen(),
+                        ),
+                      ),
+                      child: const CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.white,
+                        child: Icon(Icons.person, color: Color(0xFF6366F1), size: 28),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -98,13 +93,10 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         children: [
                           const Text(
                             'Merhaba, Öğrenci 👋',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.white70, fontSize: 14),
                           ),
                           Text(
-                            _auth.currentUser?.email?.split('@')[0] ?? 'Öğrenci',
+                            _auth.currentUser?.email?.split('@')[0].toUpperCase() ?? 'ÖĞRENCİ',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -114,95 +106,115 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.logout,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      onPressed: _signOut,
+                    const Stack(
+                      children: [
+                        Icon(Icons.notifications, color: Colors.white, size: 30),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Icon(Icons.circle, color: Colors.red, size: 12),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 10),
-
-              // Liste Kısmı
+              // --- FİREBASE CANLI VERİ BAĞLANTISI VE LİSTE ---
               Expanded(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(28),
-                      topRight: Radius.circular(28),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
-                        child: Text(
-                          'Canlı Duyuru Akışı',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                      ),
+                child: _isLoading
+                    ? _buildShimmerLoading()
+                    : _enrolledClassIds.isEmpty
+                        ? _buildEmptyState()
+                        : StreamBuilder<QuerySnapshot>(
+                            stream: _firestore
+                                .collection('announcements')
+                                .where('classroomId', whereIn: _enrolledClassIds)
+                                .orderBy('createdAt', descending: true)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return const Center(child: Text('Hata oluştu.'));
+                              }
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return _buildShimmerLoading();
+                              }
 
-                      // --- İŞTE BURASI CANLI VERİ (STREAM BUILDER) ---
-                      Expanded(
-                        child: _isLoading
-                            ? _buildShimmerLoading() // Normal loading yerine Shimmer eklendi
-                            : _enrolledClassIds.isEmpty
-                                ? _buildEmptyState()
-                                : StreamBuilder<QuerySnapshot>(
-                                    stream: _firestore
-                                        .collection('announcements')
-                                        .where(
-                                          'classroomId',
-                                          whereIn: _enrolledClassIds,
-                                        )
-                                        .orderBy('createdAt', descending: true)
-                                        .snapshots(),
-                                    builder: (context, snapshot) {
-                                      if (snapshot.hasError) {
-                                        return Center(
-                                          child: Text('Hata: ${snapshot.error}'),
-                                        );
-                                      }
-                                      if (snapshot.connectionState == ConnectionState.waiting) {
-                                        return _buildShimmerLoading(); // Veri gelirken Shimmer
-                                      }
+                              final docs = snapshot.data?.docs ?? [];
+                              final totalAnnouncements = docs.length;
 
-                                      final docs = snapshot.data?.docs ?? [];
-
-                                      if (docs.isEmpty) {
-                                        return const Center(
-                                          child: Text(
-                                            'Sınıfınızda henüz duyuru yok.',
-                                          ),
-                                        );
-                                      }
-
-                                      return ListView.builder(
-                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                        itemCount: docs.length,
-                                        itemBuilder: (context, index) {
-                                          final data = docs[index].data() as Map<String, dynamic>;
-                                          final message = MessageModel.fromMap(data, docs[index].id);
-                                          return _buildAnnouncementCard(message);
-                                        },
-                                      );
-                                    },
+                              return Column(
+                                children: [
+                                  // --- SAİB'İN İSTATİSTİK KARTI (Gerçek Veri) ---
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                        children: [
+                                          _buildStat('$totalAnnouncements', 'Toplam'),
+                                          Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.4)),
+                                          _buildStat('0', 'Yeni'), 
+                                          Container(width: 1, height: 40, color: Colors.white.withValues(alpha: 0.4)),
+                                          _buildStat('$totalAnnouncements', 'Okundu'),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                      ),
-                    ],
-                  ),
-                ),
+
+                                  const SizedBox(height: 20),
+
+                                  // --- BEYAZ LİSTE ALANI ---
+                                  Expanded(
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFF3F4F6),
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: Radius.circular(28),
+                                          topRight: Radius.circular(28),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Padding(
+                                            padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+                                            child: Text(
+                                              'Son Duyurular',
+                                              style: TextStyle(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF1F2937),
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: docs.isEmpty
+                                                ? const Center(child: Text('Sınıfınızda henüz duyuru yok.'))
+                                                : ListView.builder(
+                                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                                    itemCount: docs.length,
+                                                    itemBuilder: (context, index) {
+                                                      final data = docs[index].data() as Map<String, dynamic>;
+                                                      final message = MessageModel.fromMap(data, docs[index].id);
+                                                      return _buildAnnouncementCard(message);
+                                                    },
+                                                  ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
               ),
             ],
           ),
@@ -211,60 +223,48 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Belal'in Shimmer Animasyonu (Senin temana uygun uyarlandı)
+  Widget _buildStat(String value, String label) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ],
+    );
+  }
+
   Widget _buildShimmerLoading() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
       highlightColor: Colors.grey[100]!,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        itemCount: 5,
+        padding: const EdgeInsets.all(20),
+        itemCount: 3,
         itemBuilder: (_, __) => Container(
           margin: const EdgeInsets.only(bottom: 12),
           height: 120,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
         ),
       ),
     );
   }
 
-  // Öğrenci Hiçbir Sınıfta Değilse
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.school_outlined, size: 80, color: Colors.grey.shade400),
+          Icon(Icons.school_outlined, size: 80, color: Colors.white.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
-          Text(
-            'Henüz bir sınıfa kayıtlı değilsiniz.',
-            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              // TODO: Sınıfa katılma (Join Class) rotası eklenecek
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Sınıfa Katıl'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-              foregroundColor: Colors.white,
-            ),
-          ),
+          const Text('Henüz bir sınıfa kayıtlı değilsiniz.', style: TextStyle(color: Colors.white)),
         ],
       ),
     );
   }
 
-  // Tekil Duyuru Kartı (UI + Backend Verisi + Tıklama Yönlendirmesi)
   Widget _buildAnnouncementCard(MessageModel message) {
     final dateStr = "${message.createdAt.day}/${message.createdAt.month}/${message.createdAt.year}";
 
-    return InkWell( // Tıklanabilirlik eklendi
+    return InkWell(
       onTap: () {
         Navigator.push(
           context,
@@ -353,11 +353,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               Text(
                 message.content,
                 style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-                maxLines: 2, // Uzun yazıları kartta kısaltır
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-
-              // Eğer Hoca Resim veya PDF eklemişse Butonları Göster
               if (message.imageUrl != null || message.pdfUrl != null) ...[
                 const Divider(height: 24),
                 Row(
@@ -365,9 +363,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     if (message.imageUrl != null)
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                             // İçeri tıklandığında detay sayfasına gidecek
-                          },
+                          onPressed: () {},
                           icon: const Icon(Icons.image, size: 18),
                           label: const Text(
                             'Görsel Eklendi',
@@ -383,9 +379,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     if (message.pdfUrl != null)
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            // İçeri tıklandığında detay sayfasına gidecek
-                          },
+                          onPressed: () {},
                           icon: const Icon(Icons.picture_as_pdf, size: 18),
                           label: const Text(
                             'PDF Eklendi',
