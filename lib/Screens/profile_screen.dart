@@ -1,18 +1,58 @@
-// profile_screen.dart
+// lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'welcome_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
-  final String userName;
-  final String userEmail;
-  final String kurumKodu;
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key});
 
-  const ProfileScreen({
-    super.key,
-    required this.userName,
-    required this.userEmail,
-    required this.kurumKodu,
-  });
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  String userName = "Yükleniyor...";
+  String userEmail = "Yükleniyor...";
+  String kurumKodu = "Yükleniyor...";
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
+
+  // --- FİREBASE'DEN KULLANICI BİLGİLERİNİ ÇEKME ---
+  Future<void> _fetchUserData() async {
+    final User? user = _auth.currentUser;
+    if (user != null) {
+      try {
+        final DocumentSnapshot userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          setState(() {
+            userName = data['name'] ?? "Bilinmiyor";
+            userEmail = user.email ?? "Bilinmiyor";
+            kurumKodu = data['kurumKodu'] ?? "Tanımsız";
+            isLoading = false;
+          });
+        }
+      } catch (e) {
+        setState(() {
+          userName = "Hata oluştu";
+          userEmail = user.email ?? "";
+          kurumKodu = "-";
+          isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,14 +112,16 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                userName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              isLoading 
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text(
+                      userName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
               const SizedBox(height: 4),
               Text(
                 userEmail,
@@ -100,79 +142,81 @@ class ProfileScreen extends StatelessWidget {
                       topRight: Radius.circular(28),
                     ),
                   ),
-                  child: ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      const SizedBox(height: 8),
+                  child: isLoading 
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(
+                          padding: const EdgeInsets.all(20),
+                          children: [
+                            const SizedBox(height: 8),
 
-                      // Bilgi kartı
-                      _buildSectionTitle('Hesap Bilgileri'),
-                      const SizedBox(height: 12),
-                      _buildInfoCard(
-                        icon: Icons.person_outline,
-                        label: 'Ad Soyad',
-                        value: userName,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.email_outlined,
-                        label: 'E-posta',
-                        value: userEmail,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.domain,
-                        label: 'Kurum Kodu',
-                        value: kurumKodu,
-                        valueColor: const Color(0xFF6366F1),
-                        valueBold: true,
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Ayarlar
-                      _buildSectionTitle('Ayarlar'),
-                      const SizedBox(height: 12),
-                      _buildActionCard(
-                        icon: Icons.notifications_outlined,
-                        label: 'Bildirim Ayarları',
-                        color: const Color(0xFF8B5CF6),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Yakında eklenecek!'),
-                              behavior: SnackBarBehavior.floating,
+                            // Bilgi kartı
+                            _buildSectionTitle('Hesap Bilgileri'),
+                            const SizedBox(height: 12),
+                            _buildInfoCard(
+                              icon: Icons.person_outline,
+                              label: 'Ad Soyad',
+                              value: userName,
                             ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      _buildActionCard(
-                        icon: Icons.lock_outline,
-                        label: 'Şifre Değiştir',
-                        color: const Color(0xFF06B6D4),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Yakında eklenecek!'),
-                              behavior: SnackBarBehavior.floating,
+                            const SizedBox(height: 10),
+                            _buildInfoCard(
+                              icon: Icons.email_outlined,
+                              label: 'E-posta',
+                              value: userEmail,
                             ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 24),
+                            const SizedBox(height: 10),
+                            _buildInfoCard(
+                              icon: Icons.domain,
+                              label: 'Kurum Kodu',
+                              value: kurumKodu,
+                              valueColor: const Color(0xFF6366F1),
+                              valueBold: true,
+                            ),
+                            const SizedBox(height: 24),
 
-                      // Çıkış butonu
-                      _buildSectionTitle('Hesap'),
-                      const SizedBox(height: 12),
-                      _buildActionCard(
-                        icon: Icons.logout,
-                        label: 'Çıkış Yap',
-                        color: const Color(0xFFEF4444),
-                        onTap: () => _showLogoutDialog(context),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
+                            // Ayarlar
+                            _buildSectionTitle('Ayarlar'),
+                            const SizedBox(height: 12),
+                            _buildActionCard(
+                              icon: Icons.notifications_outlined,
+                              label: 'Bildirim Ayarları',
+                              color: const Color(0xFF8B5CF6),
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Yakında eklenecek!'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            _buildActionCard(
+                              icon: Icons.lock_outline,
+                              label: 'Şifre Değiştir',
+                              color: const Color(0xFF06B6D4),
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Yakında eklenecek!'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Çıkış butonu
+                            _buildSectionTitle('Hesap'),
+                            const SizedBox(height: 12),
+                            _buildActionCard(
+                              icon: Icons.logout,
+                              label: 'Çıkış Yap',
+                              color: const Color(0xFFEF4444),
+                              onTap: () => _showLogoutDialog(context),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
                 ),
               ),
             ],
@@ -318,7 +362,9 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
+              await _auth.signOut();
+              if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (context) => const WelcomeScreen()),
