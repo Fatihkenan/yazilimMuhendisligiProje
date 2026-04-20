@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shimmer/shimmer.dart'; // Belal'in paketi
 import '../models/message_model.dart';
 import 'login_screen.dart';
+import 'announcement_detail_screen.dart'; // Detay sayfası importu
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -102,8 +104,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             ),
                           ),
                           Text(
-                            _auth.currentUser?.email?.split('@')[0] ??
-                                'Öğrenci',
+                            _auth.currentUser?.email?.split('@')[0] ?? 'Öğrenci',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -155,68 +156,75 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       // --- İŞTE BURASI CANLI VERİ (STREAM BUILDER) ---
                       Expanded(
                         child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
+                            ? _buildShimmerLoading() // Normal loading yerine Shimmer eklendi
                             : _enrolledClassIds.isEmpty
-                            ? _buildEmptyState()
-                            : StreamBuilder<QuerySnapshot>(
-                                stream: _firestore
-                                    .collection('announcements')
-                                    .where(
-                                      'classroomId',
-                                      whereIn: _enrolledClassIds,
-                                    )
-                                    .orderBy('createdAt', descending: true)
-                                    .snapshots(),
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasError) {
-                                    return Center(
-                                      child: Text('Hata: ${snapshot.error}'),
-                                    );
-                                  }
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  }
+                                ? _buildEmptyState()
+                                : StreamBuilder<QuerySnapshot>(
+                                    stream: _firestore
+                                        .collection('announcements')
+                                        .where(
+                                          'classroomId',
+                                          whereIn: _enrolledClassIds,
+                                        )
+                                        .orderBy('createdAt', descending: true)
+                                        .snapshots(),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.hasError) {
+                                        return Center(
+                                          child: Text('Hata: ${snapshot.error}'),
+                                        );
+                                      }
+                                      if (snapshot.connectionState == ConnectionState.waiting) {
+                                        return _buildShimmerLoading(); // Veri gelirken Shimmer
+                                      }
 
-                                  final docs = snapshot.data?.docs ?? [];
+                                      final docs = snapshot.data?.docs ?? [];
 
-                                  if (docs.isEmpty) {
-                                    return const Center(
-                                      child: Text(
-                                        'Sınıfınızda henüz duyuru yok.',
-                                      ),
-                                    );
-                                  }
+                                      if (docs.isEmpty) {
+                                        return const Center(
+                                          child: Text(
+                                            'Sınıfınızda henüz duyuru yok.',
+                                          ),
+                                        );
+                                      }
 
-                                  return ListView.builder(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      0,
-                                      16,
-                                      16,
-                                    ),
-                                    itemCount: docs.length,
-                                    itemBuilder: (context, index) {
-                                      final data =
-                                          docs[index].data()
-                                              as Map<String, dynamic>;
-                                      final message = MessageModel.fromMap(
-                                        data,
-                                        docs[index].id,
+                                      return ListView.builder(
+                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                        itemCount: docs.length,
+                                        itemBuilder: (context, index) {
+                                          final data = docs[index].data() as Map<String, dynamic>;
+                                          final message = MessageModel.fromMap(data, docs[index].id);
+                                          return _buildAnnouncementCard(message);
+                                        },
                                       );
-                                      return _buildAnnouncementCard(message);
                                     },
-                                  );
-                                },
-                              ),
+                                  ),
                       ),
                     ],
                   ),
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Belal'in Shimmer Animasyonu (Senin temana uygun uyarlandı)
+  Widget _buildShimmerLoading() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        itemCount: 5,
+        itemBuilder: (_, __) => Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          height: 120,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
       ),
@@ -252,130 +260,147 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
-  // Tekil Duyuru Kartı (UI + Backend Verisi)
+  // Tekil Duyuru Kartı (UI + Backend Verisi + Tıklama Yönlendirmesi)
   Widget _buildAnnouncementCard(MessageModel message) {
-    // Tarihi formatlayalım
-    final dateStr =
-        "${message.createdAt.day}/${message.createdAt.month}/${message.createdAt.year}";
+    final dateStr = "${message.createdAt.day}/${message.createdAt.month}/${message.createdAt.year}";
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return InkWell( // Tıklanabilirlik eklendi
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AnnouncementDetailScreen(
+              title: message.title,
+              content: message.content,
+              date: dateStr,
+              imageUrl: message.imageUrl,
+              pdfUrl: message.pdfUrl,
+            ),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.campaign,
-                    color: Color(0xFF6366F1),
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.calendar_today_outlined,
-                            size: 14,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            dateStr,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF9CA3AF),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+        );
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-            const SizedBox(height: 12),
-            Text(
-              message.content,
-              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-            ),
-
-            // Eğer Hoca Resim veya PDF eklemişse Butonları Göster
-            if (message.imageUrl != null || message.pdfUrl != null) ...[
-              const Divider(height: 24),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  if (message.imageUrl != null)
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // TODO: Resmi tam ekran açma eklenebilir
-                        },
-                        icon: const Icon(Icons.image, size: 18),
-                        label: const Text(
-                          'Görsel',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6366F1),
-                        ),
-                      ),
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  if (message.imageUrl != null && message.pdfUrl != null)
-                    const SizedBox(width: 8),
-                  if (message.pdfUrl != null)
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // TODO: PDF indirme eklenebilir
-                        },
-                        icon: const Icon(Icons.picture_as_pdf, size: 18),
-                        label: const Text(
-                          'PDF İndir',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF8B5CF6),
-                        ),
-                      ),
+                    child: const Icon(
+                      Icons.campaign,
+                      color: Color(0xFF6366F1),
+                      size: 24,
                     ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          message.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_today_outlined,
+                              size: 14,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Text(
+                message.content,
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                maxLines: 2, // Uzun yazıları kartta kısaltır
+                overflow: TextOverflow.ellipsis,
+              ),
+
+              // Eğer Hoca Resim veya PDF eklemişse Butonları Göster
+              if (message.imageUrl != null || message.pdfUrl != null) ...[
+                const Divider(height: 24),
+                Row(
+                  children: [
+                    if (message.imageUrl != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                             // İçeri tıklandığında detay sayfasına gidecek
+                          },
+                          icon: const Icon(Icons.image, size: 18),
+                          label: const Text(
+                            'Görsel Eklendi',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6366F1),
+                          ),
+                        ),
+                      ),
+                    if (message.imageUrl != null && message.pdfUrl != null)
+                      const SizedBox(width: 8),
+                    if (message.pdfUrl != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            // İçeri tıklandığında detay sayfasına gidecek
+                          },
+                          icon: const Icon(Icons.picture_as_pdf, size: 18),
+                          label: const Text(
+                            'PDF Eklendi',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF8B5CF6),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
