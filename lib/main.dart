@@ -4,7 +4,6 @@ import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 // ignore: unused_import
 import 'screens/welcome_screen.dart';
-import 'screens/teacher_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

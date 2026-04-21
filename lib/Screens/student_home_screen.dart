@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shimmer/shimmer.dart'; // SHIMMER PAKETİ EKLENDİ
 import '../models/message_model.dart';
 import 'login_screen.dart';
 
@@ -18,6 +19,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   List<String> _enrolledClassIds = [];
   bool _isLoading = true;
+  String _userName = "YÜKLENİYOR..."; // İsmi tutacağımız değişken
 
   @override
   void initState() {
@@ -25,26 +27,46 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     _fetchEnrolledClasses();
   }
 
-  // --- ÖĞRENCİNİN SINIFLARINI GETİR (İzolasyon) ---
+  // --- ÖĞRENCİNİN ADINI VE SINIFLARINI GETİR (GÜVENLİ VERSİYON) ---
   Future<void> _fetchEnrolledClasses() async {
-    final String currentUserId = _auth.currentUser!.uid;
+    // EMNİYET KEMERİ: Kullanıcı düşmüş mü kontrol et
+    final User? currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      if (mounted) _signOut(); // Oturum yoksa Login'e at
+      return;
+    }
+
+    final String currentUserId = currentUser.uid;
 
     try {
+      // 1. Önce kullanıcının adını Firebase'den çek (adSoyad alanından)
+      final userDoc = await _firestore
+          .collection('users')
+          .doc(currentUserId)
+          .get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        _userName = (userData['adSoyad'] ?? 'ÖĞRENCİ').toString().toUpperCase();
+      }
+
+      // 2. Sonra kayıtlı olduğu sınıfları çek
       final snapshot = await _firestore
           .collection('classrooms')
           .where('studentIds', arrayContains: currentUserId)
           .get();
 
-      setState(() {
-        _enrolledClassIds = snapshot.docs.map((doc) => doc.id).toList();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _enrolledClassIds = snapshot.docs.map((doc) => doc.id).toList();
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Sınıflar yüklenemedi: $e'),
+            content: Text('Veriler yüklenemedi: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -102,13 +124,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             ),
                           ),
                           Text(
-                            _auth.currentUser?.email?.split('@')[0] ??
-                                'Öğrenci',
+                            _userName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -155,7 +178,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       // --- İŞTE BURASI CANLI VERİ (STREAM BUILDER) ---
                       Expanded(
                         child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
+                            ? _buildShimmerEffect() // SHIMMER BURAYA EKLENDİ
                             : _enrolledClassIds.isEmpty
                             ? _buildEmptyState()
                             : StreamBuilder<QuerySnapshot>(
@@ -175,9 +198,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                   }
                                   if (snapshot.connectionState ==
                                       ConnectionState.waiting) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
+                                    return _buildShimmerEffect(); // SHIMMER BURAYA DA EKLENDİ
                                   }
 
                                   final docs = snapshot.data?.docs ?? [];
@@ -220,6 +241,28 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // --- YENİ EKLENEN SHIMMER EFEKTİ FONKSİYONU ---
+  Widget _buildShimmerEffect() {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemCount: 4, // Ekranda 4 tane sahte kart dönecek
+      itemBuilder: (context, index) {
+        return Shimmer.fromColors(
+          baseColor: Colors.grey[300]!,
+          highlightColor: Colors.grey[100]!,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            height: 120, // Kartların yaklaşık yüksekliği
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        );
+      },
     );
   }
 

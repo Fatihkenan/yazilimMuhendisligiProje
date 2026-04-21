@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/firestore_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/storage_service.dart';
 
 class TeacherAddAnnouncementScreen extends StatefulWidget {
@@ -24,21 +24,49 @@ class _TeacherAddAnnouncementScreenState
   final _contentFocus = FocusNode();
 
   bool _isLoading = false;
+  bool _isLoadingClasses = true;
+
   File? _selectedImage;
   File? _selectedPdf;
 
   final StorageService _storageService = StorageService();
-  final FirestoreService _firestoreService = FirestoreService();
 
-  // Şimdilik dummy sınıf listesi duruyor, ilerde Firestore'dan çekebiliriz.
-  final List<String> _classes = [
-    'YKS Sayısal-1',
-    'YKS Sözel-2',
-    'LGS Matematik',
-    'LGS Fen Bilimleri',
-    'KPSS Genel Kültür',
-  ];
-  String? _selectedClass;
+  // GERÇEK SINIFLARI TUTACAĞIMIZ LİSTE (Dummy veri silindi)
+  List<Map<String, dynamic>> _myClasses = [];
+  String? _selectedClassId;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMyClasses(); // Sayfa açılırken hocanın sınıflarını çek
+  }
+
+  // --- ÖĞRETMENİN KENDİ SINIFLARINI FİREBASE'DEN ÇEK ---
+  Future<void> _fetchMyClasses() async {
+    try {
+      final String uid = FirebaseAuth.instance.currentUser!.uid;
+      final snapshot = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .where('teacherId', isEqualTo: uid)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _myClasses = snapshot.docs
+              .map((doc) => {'id': doc.id, 'name': doc['className']})
+              .toList();
+          _isLoadingClasses = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingClasses = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sınıflar yüklenemedi: $e')));
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -72,6 +100,7 @@ class _TeacherAddAnnouncementScreenState
     }
   }
 
+  // --- DUYURUYU FİREBASE'E GÖNDER ---
   Future<void> _addAnnouncement() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -97,20 +126,21 @@ class _TeacherAddAnnouncementScreenState
         );
       }
 
-      // 3. Firestore'a duyuruyu kaydet
-      await _firestoreService.sendAnnouncement(
-        classroomId: _selectedClass ?? 'Genel',
-        teacherId: teacherId,
-        title: _titleController.text.trim(),
-        content: _contentController.text.trim(),
-        imageUrl: imageUrl,
-        pdfUrl: pdfUrl,
-      );
+      // 3. DOĞRUDAN FIRESTORE'A YAZIYORUZ (Kusursuz eşleşme için)
+      await FirebaseFirestore.instance.collection('announcements').add({
+        'classroomId': _selectedClassId, // Öğrencinin dinlediği gerçek ID
+        'teacherId': teacherId,
+        'title': _titleController.text.trim(),
+        'content': _contentController.text.trim(),
+        'imageUrl': imageUrl,
+        'pdfUrl': pdfUrl,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Duyuru ve dosyalar başarıyla paylaşıldı!'),
+          content: Text('Duyuru başarıyla paylaşıldı!'),
           backgroundColor: Colors.green,
         ),
       );
@@ -176,6 +206,7 @@ class _TeacherAddAnnouncementScreenState
                           TextFormField(
                             controller: _titleController,
                             focusNode: _titleFocus,
+                            textInputAction: TextInputAction.next,
                             decoration: InputDecoration(
                               labelText: 'Duyuru Başlığı',
                               prefixIcon: const Icon(Icons.title),
@@ -206,28 +237,33 @@ class _TeacherAddAnnouncementScreenState
                                 : null,
                           ),
                           const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            initialValue:
-                                _selectedClass, // Deprecated 'value' hatası düzeltildi
-                            decoration: InputDecoration(
-                              labelText: 'Sınıf Seçin',
-                              prefixIcon: const Icon(Icons.class_),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _classes
-                                .map(
-                                  (c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c),
+
+                          // DİNAMİK SINIF SEÇİCİ (FİREBASE'DEN GELENLER)
+                          _isLoadingClasses
+                              ? const CircularProgressIndicator()
+                              : DropdownButtonFormField<String>(
+                                  value: _selectedClassId,
+                                  decoration: InputDecoration(
+                                    labelText: 'Sınıf Seçin',
+                                    prefixIcon: const Icon(Icons.class_),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
                                   ),
-                                )
-                                .toList(),
-                            onChanged: (v) =>
-                                setState(() => _selectedClass = v),
-                            validator: (v) => v == null ? 'Sınıf seçin' : null,
-                          ),
+                                  items: _myClasses.map((c) {
+                                    return DropdownMenuItem<String>(
+                                      value: c['id'], // Arka planda ID tutulur
+                                      child: Text(
+                                        c['name'],
+                                      ), // Ekranda isim görünür
+                                    );
+                                  }).toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _selectedClassId = v),
+                                  validator: (v) => v == null
+                                      ? 'Lütfen bir sınıf seçin'
+                                      : null,
+                                ),
                           const SizedBox(height: 24),
 
                           // --- DOSYA SEÇME BUTONLARI ---
@@ -264,7 +300,6 @@ class _TeacherAddAnnouncementScreenState
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 32),
                           SizedBox(
                             width: double.infinity,

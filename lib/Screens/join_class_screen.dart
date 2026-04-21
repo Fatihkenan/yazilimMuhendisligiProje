@@ -1,6 +1,7 @@
+// lib/screens/join_class_screen.dart
 import 'package:flutter/material.dart';
-
-import 'main_feed_screen.dart'; 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class JoinClassScreen extends StatefulWidget {
   const JoinClassScreen({super.key});
@@ -12,26 +13,78 @@ class JoinClassScreen extends StatefulWidget {
 class _JoinClassScreenState extends State<JoinClassScreen> {
   final TextEditingController _codeController = TextEditingController();
   String? _errorMessage;
+  bool _isLoading = false;
 
-  void _handleJoin() {
+  Future<void> _handleJoin() async {
+    final enteredText = _codeController.text.trim();
+
+    // 1. Boşluk kontrolü
+    if (enteredText.isEmpty) {
+      setState(() {
+        _errorMessage = "Lütfen sınıf adını giriniz";
+      });
+      return;
+    }
+
     setState(() {
-      
-      if (_codeController.text.length != 6) {
-        _errorMessage = "Lütfen 6 haneli kodu doğru girdiğinizden emin olun";
-      } else {
-        _errorMessage = null;
-        
-       
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const MainFeedScreen()),
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sınıfa katılım sağlanıyor...')),
-        );
-      }
+      _errorMessage = null;
+      _isLoading = true;
     });
+
+    try {
+      final String currentUserId = FirebaseAuth.instance.currentUser!.uid;
+
+      // 2. Veritabanında sınıfı ara (Sınıf İsmine göre)
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .where('className', isEqualTo: enteredText)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        setState(() {
+          _errorMessage = "Bu isimde bir sınıf bulunamadı!";
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final classDoc = querySnapshot.docs.first;
+      final List<dynamic> currentStudents = classDoc.data()['studentIds'] ?? [];
+
+      // 3. Öğrenci zaten bu sınıfa kayıtlı mı?
+      if (currentStudents.contains(currentUserId)) {
+        setState(() {
+          _errorMessage = "Zaten bu sınıfa kayıtlısınız.";
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 4. Öğrencinin UID'sini sınıfın studentIds listesine ekle
+      await classDoc.reference.update({
+        'studentIds': FieldValue.arrayUnion([currentUserId]),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sınıfa başarıyla katıldınız!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // 5. Başarılı olunca geldiği ekrana (Ana sayfaya) geri dön
+      Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Bir hata oluştu: $e";
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -44,30 +97,38 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'Lütfen 6 haneli sınıf kodunu giriniz',
+              'Lütfen Sınıf Adını Giriniz',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
             TextField(
               controller: _codeController,
-              maxLength: 6,
-              keyboardType: TextInputType.number,
+              // maxLength ve klavye tipini kaldırdık ki harf de yazılabilsin
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
-                hintText: '000000',
+                hintText: 'Örn: 12-A Yazılım',
                 errorText: _errorMessage,
-                counterText: "", 
+                counterText: "",
               ),
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, letterSpacing: 10),
+              style: const TextStyle(fontSize: 20, letterSpacing: 2),
             ),
             const SizedBox(height: 30),
             ElevatedButton(
-              onPressed: _handleJoin, 
+              onPressed: _isLoading ? null : _handleJoin,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
               ),
-              child: const Text('Şimdi Katıl'),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Şimdi Katıl'),
             ),
           ],
         ),

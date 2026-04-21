@@ -1,5 +1,7 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:yazilimmuhendislgiproje/Screens/register_screen.dart';
 import 'package:yazilimmuhendislgiproje/Screens/student_home_screen.dart';
 import 'package:yazilimmuhendislgiproje/Screens/teacher_home_screen.dart';
@@ -43,34 +45,53 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: auth_service.dart içine tenantCode parametresi de eklenmeli!
-      // 'userData' kullanılmadığı için sadece await ile login işlemini tetikliyoruz
+      // 1. Firebase Auth ile Giriş Yap
       await _authService.loginUser(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        // tenantCode: _tenantCodeController.text.trim(), // Backend güncellenince burayı açın
       );
 
-      if (!mounted) return;
+      // 2. Kullanıcının Gerçek Rolünü Firestore'dan Çek
+      final User? currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        final DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Giriş başarılı! Hoş geldiniz.'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.green,
-        ),
-      );
+        if (!mounted) return;
 
-      // Şimdilik test için true bırakıldı ancak backend'den gelen role göre güncellenmeli.
-      const isTeacher = true; // 'final' yerine 'const' kullanıldı
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>;
+          final String role =
+              userData['role'] ?? 'student'; // Rol yoksa varsayılan öğrenci
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              isTeacher ? const TeacherHomeScreen() : const StudentHomeScreen(),
-        ),
-      );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Giriş başarılı! Hoş geldiniz.'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // 3. Rol Bazlı Dinamik Yönlendirme
+          if (role == 'teacher') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const TeacherHomeScreen(),
+              ),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const StudentHomeScreen(),
+              ),
+            );
+          }
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

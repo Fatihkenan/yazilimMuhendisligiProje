@@ -1,7 +1,7 @@
 // lib/screens/teacher_create_class_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/firestore_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TeacherCreateClassScreen extends StatefulWidget {
   const TeacherCreateClassScreen({super.key});
@@ -16,9 +16,6 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
   final _classNameController = TextEditingController();
   final _classNameFocus = FocusNode();
   bool _isLoading = false;
-
-  // Servisimizi tanımlıyoruz
-  final FirestoreService _firestoreService = FirestoreService();
 
   @override
   void dispose() {
@@ -40,11 +37,13 @@ class _TeacherCreateClassScreenState extends State<TeacherCreateClassScreen> {
         throw Exception("Oturum açmış bir kullanıcı bulunamadı!");
       }
 
-      // 2. Senin yazdığın Task 2 servisini çağırıyoruz
-      await _firestoreService.createClass(
-        name: _classNameController.text.trim(),
-        teacherId: currentUser.uid,
-      );
+      // 2. DOĞRUDAN FIRESTORE'A YAZIYORUZ (Şema garantisi için)
+      await FirebaseFirestore.instance.collection('classrooms').add({
+        'className': _classNameController.text.trim(),
+        'teacherId': currentUser.uid,
+        'studentIds': [], // ÇOK KRİTİK: Öğrenci ekranı bu diziyi arıyor!
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (!mounted) return;
 

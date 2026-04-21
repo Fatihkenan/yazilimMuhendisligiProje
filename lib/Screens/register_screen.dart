@@ -1,7 +1,7 @@
-//register_screen.dart
+// lib/screens/register_screen.dart
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
-import '../services/auth_service.dart'; // Servisimizi import ettik
+import '../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,8 +12,6 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-
-  // Servisimizden bir nesne oluşturuyoruz
   final AuthService _authService = AuthService();
 
   final _inviteCodeController = TextEditingController();
@@ -49,24 +47,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  // YENİDEN YAZILAN GERÇEK FIREBASE KAYIT FONKSİYONU
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // AuthService içindeki registerUser fonksiyonunu çağırıyoruz
+      // YENİ EKLENDİ: Arayüzdeki _selectedRole bilgisini servise iletiyoruz
       await _authService.registerUser(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
         adSoyad: _nameController.text.trim(),
         kurumKodu: _inviteCodeController.text.trim(),
+        role: _selectedRole,
       );
 
       if (!mounted) return;
 
-      // Başarılı olursa yeşil mesaj göster ve Login ekranına at
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Kayıt başarılı! Giriş yapabilirsiniz.'),
@@ -79,7 +76,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         MaterialPageRoute(builder: (context) => const LoginScreen()),
       );
     } catch (e) {
-      // Hata olursa kırmızı mesajla kullanıcıya hatayı göster
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -168,7 +164,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 const SizedBox(height: 32),
 
-                                // ROL SEÇİMİ (Şimdilik UI'da duruyor ama backend'de ezilip 'student' olacak)
+                                // ROL SEÇİMİ BAĞLANDI
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -254,9 +250,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     ),
                                   ),
                                   validator: (value) =>
-                                      (value == null ||
-                                          value.isEmpty ||
-                                          value.length < 5)
+                                      (value == null || value.length < 5)
                                       ? 'Geçerli bir davet kodu girin'
                                       : null,
                                 ),
@@ -283,6 +277,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 16),
+
                                 TextFormField(
                                   controller: _emailController,
                                   focusNode: _emailFocus,
@@ -306,6 +301,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 16),
+
                                 TextFormField(
                                   controller: _passwordController,
                                   focusNode: _passwordFocus,
@@ -339,6 +335,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 16),
+
                                 TextFormField(
                                   controller: _confirmPasswordController,
                                   focusNode: _confirmPasswordFocus,
@@ -371,6 +368,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 24),
+
                                 SizedBox(
                                   width: double.infinity,
                                   height: 52,
@@ -403,6 +401,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 16),
+
                                 TextButton(
                                   onPressed: () => Navigator.pushReplacement(
                                     context,

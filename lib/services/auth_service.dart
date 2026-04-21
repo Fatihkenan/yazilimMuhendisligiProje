@@ -6,32 +6,30 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // 1. KAYIT OLMA VE FIRESTORE'A 'STUDENT' OLARAK KAYDETME
+  // 1. KAYIT OLMA VE FIRESTORE'A KAYDETME
   Future<UserCredential?> registerUser({
     required String email,
     required String password,
     required String adSoyad,
     required String kurumKodu,
+    required String role, // YENİ EKLENDİ: Rol artık dışarıdan geliyor
   }) async {
     try {
-      // Firebase Auth'ta e-posta ve şifre ile kullanıcı oluştur
       UserCredential userCredential = await _auth
           .createUserWithEmailAndPassword(email: email, password: password);
 
-      // Oluşan kullanıcının bilgilerini Firestore veritabanına 'users' koleksiyonuna yaz
       await _firestore.collection('users').doc(userCredential.user!.uid).set({
         'uid': userCredential.user!.uid,
         'adSoyad': adSoyad,
         'email': email,
-        'kurumKodu': kurumKodu, // Senin o meşhur Multi-Tenancy anahtarın
+        'kurumKodu': kurumKodu,
         'role':
-            'student', // Varsayılan rol (Admin sonradan 'teacher' yapabilir)
+            role, // YENİ EKLENDİ: Arayüzden gelen rol veritabanına yazılıyor
         'kayitTarihi': FieldValue.serverTimestamp(),
       });
 
       return userCredential;
     } on FirebaseAuthException catch (e) {
-      // Hata durumunda mesajı arayüze fırlat
       throw Exception(e.message);
     }
   }
