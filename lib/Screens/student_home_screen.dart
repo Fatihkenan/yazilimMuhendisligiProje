@@ -7,6 +7,7 @@ import '../models/message_model.dart';
 import 'announcement_detail_screen.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart'; // Çıkış yapınca döneceği ekran
+import 'join_class_screen.dart'; // Sınıfa Katıl ekranı importu eklendi
 
 class StudentHomeScreen extends StatefulWidget {
   const StudentHomeScreen({super.key});
@@ -372,6 +373,32 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           const Text(
             'Henüz bir sınıfa kayıtlı değilsiniz.',
             style: TextStyle(color: Colors.white),
+          ),
+          const SizedBox(height: 24),
+          // --- BUTON BURAYA EKLENDİ ---
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const JoinClassScreen(),
+                ),
+              ).then((_) {
+                _fetchEnrolledClasses();
+              });
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Sınıfa Katıl'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(
+                0xFF6366F1,
+              ), // Tasarıma uygun mor yazı
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
           ),
         ],
       ),
