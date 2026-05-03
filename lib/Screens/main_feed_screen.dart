@@ -13,7 +13,6 @@ class MainFeedScreen extends StatelessWidget {
         centerTitle: true,
       ),
       body: StreamBuilder<List<Map<String, String>>>(
-        
         stream: Stream.fromFuture(Future.delayed(const Duration(seconds: 2), () => [
           {"hoca": "Dr. Ahmet Yılmaz", "mesaj": "Arkadaşlar, vize sınavı konuları sisteme yüklendi."},
           {"hoca": "Asistan Elif Kaya", "mesaj": "Ödev teslimlerini yarın saat 17:00'ye kadar yapınız."},
@@ -39,8 +38,9 @@ class MainFeedScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (context) => AnnouncementDetailScreen(
-                          hocaName: post['hoca']!,
-                          message: post['mesaj']!,
+                          title: post['hoca']!,
+                          content: post['mesaj']!, // أضفنا الفاصلة هنا
+                          date: "03.05.2026",
                         ),
                       ),
                     );
@@ -66,8 +66,6 @@ class MainFeedScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Text(post['mesaj']!, style: const TextStyle(fontSize: 15)),
                         const Divider(height: 25),
-                        
-                        
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: const [
@@ -115,7 +113,6 @@ class MainFeedScreen extends StatelessWidget {
     );
   }
 }
-
 
 class ReactionButton extends StatefulWidget {
   final String label;
