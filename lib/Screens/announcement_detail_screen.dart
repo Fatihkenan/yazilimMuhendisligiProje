@@ -18,6 +18,10 @@ class AnnouncementDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    
+    
+    bool isTeacher = true; 
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Duyuru Detayı'),
@@ -28,7 +32,7 @@ class AnnouncementDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Resim varsa Firebase'den gelen gerçek resmi göster
+            
             if (imageUrl != null)
               Image.network(
                 imageUrl!,
@@ -43,7 +47,7 @@ class AnnouncementDetailScreen extends StatelessWidget {
                   );
                 },
               )
-            // Resim yoksa standart bir kapak göster
+            
             else
               Container(
                 width: double.infinity,
@@ -65,9 +69,9 @@ class AnnouncementDetailScreen extends StatelessWidget {
                     content,
                     style: const TextStyle(fontSize: 16, height: 1.5, color: Color(0xFF374151)),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 30),
                   
-                  // Eğer PDF varsa indirme butonunu göster
+                  
                   if (pdfUrl != null)
                     ElevatedButton.icon(
                       onPressed: () {
@@ -79,16 +83,73 @@ class AnnouncementDetailScreen extends StatelessWidget {
                         minimumSize: const Size(double.infinity, 50),
                         backgroundColor: const Color(0xFFEF4444),
                         foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: const Icon(Icons.picture_as_pdf),
                       label: const Text('PDF Dosyasını İndir', style: TextStyle(fontSize: 16)),
                     ),
+
+                  
+                  if (isTeacher) ...[
+                    const SizedBox(height: 40),
+                    const Divider(thickness: 1.5),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: const [
+                        Icon(Icons.analytics, color: Color(0xFF6366F1)),
+                        SizedBox(width: 10),
+                        Text(
+                          "Okundu Raporu (Anladım)",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    _buildTeacherReportPanel(),
+                  ],
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  
+  Widget _buildTeacherReportPanel() {
+    
+    final List<String> studentList = [
+      "Ali Yılmaz",
+      "Ayşe Kaya",
+      "Mehmet Demir",
+      "Fatma Çelik",
+      "Caner Öz"
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: studentList.isEmpty
+          ? const Text("Henüz kimse 'Anladım' butonuna basmadı.")
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: studentList.map((student) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                    const SizedBox(width: 10),
+                    Text(student, style: const TextStyle(fontSize: 15, color: Color(0xFF4B5563))),
+                  ],
+                ),
+              )).toList(),
+            ),
     );
   }
 }
