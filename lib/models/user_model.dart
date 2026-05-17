@@ -1,38 +1,33 @@
-// lib/models/user_model.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserModel {
   final String uid;
-  final String email;
   final String adSoyad;
-  final String kurumKodu;
-  final String role; // 'student' veya 'teacher'
+  final String email;
+  final DateTime createdAt;
 
   UserModel({
     required this.uid,
-    required this.email,
     required this.adSoyad,
-    required this.kurumKodu,
-    required this.role,
+    required this.email,
+    required this.createdAt,
   });
 
-  // Firestore'dan gelen veriyi (Map) Dart nesnesine çevirir
   factory UserModel.fromMap(Map<String, dynamic> map, String documentId) {
     return UserModel(
       uid: documentId,
-      email: map['email'] ?? '',
       adSoyad: map['adSoyad'] ?? '',
-      kurumKodu: map['kurumKodu'] ?? '',
-      role: map['role'] ?? 'student',
+      email: map['email'] ?? '',
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
-  // Dart nesnesini Firestore'a yazmak için Map'e çevirir
   Map<String, dynamic> toMap() {
     return {
-      'email': email,
+      'uid': uid,
       'adSoyad': adSoyad,
-      'kurumKodu': kurumKodu,
-      'role': role,
+      'email': email,
+      'createdAt': FieldValue.serverTimestamp(),
     };
   }
 }

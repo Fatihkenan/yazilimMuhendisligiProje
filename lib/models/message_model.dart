@@ -1,57 +1,36 @@
-// lib/models/message_model.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MessageModel {
   final String id;
-  final String classroomId;
-  final String teacherId;
-  final String title;
+  final String channelId;
+  final String senderId;
+  final String senderName;
   final String content;
+  final String? fileUrl; // PDF veya resim yüklersek buraya gelecek
+  final List<String> readBy; // Sprint 5 için "Okundu/Anladım" listesi
   final DateTime createdAt;
-  final String? imageUrl;
-  final String? pdfUrl;
-  // SPRINT 5: "Anladım" butonuna basan öğrencilerin UID listesi
-  final List<String> understoodBy;
 
   MessageModel({
     required this.id,
-    required this.classroomId,
-    required this.teacherId,
-    required this.title,
+    required this.channelId,
+    required this.senderId,
+    required this.senderName,
     required this.content,
+    this.fileUrl,
+    required this.readBy,
     required this.createdAt,
-    this.imageUrl,
-    this.pdfUrl,
-    this.understoodBy = const [], // Varsayılan olarak boş liste
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> map, String documentId) {
     return MessageModel(
       id: documentId,
-      classroomId: map['classroomId'] ?? '',
-      teacherId: map['teacherId'] ?? '',
-      title: map['title'] ?? '',
+      channelId: map['channelId'] ?? '',
+      senderId: map['senderId'] ?? '',
+      senderName: map['senderName'] ?? 'Bilinmeyen',
       content: map['content'] ?? '',
-      createdAt: map['createdAt'] != null
-          ? (map['createdAt'] as dynamic).toDate()
-          : DateTime.now(),
-      imageUrl: map['imageUrl'],
-      pdfUrl: map['pdfUrl'],
-      // SPRINT 5: Firestore'daki dynamic diziyi Dart List<String> formatına çeviriyoruz
-      understoodBy: List<String>.from(map['understoodBy'] ?? []),
+      fileUrl: map['fileUrl'],
+      readBy: List<String>.from(map['readBy'] ?? []),
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'classroomId': classroomId,
-      'teacherId': teacherId,
-      'title': title,
-      'content': content,
-      'createdAt': createdAt,
-      'imageUrl': imageUrl,
-      'pdfUrl': pdfUrl,
-      // SPRINT 5: Veritabanına öğrenci listesini yazıyoruz
-      'understoodBy': understoodBy,
-    };
   }
 }

@@ -1,125 +1,75 @@
-// lib/services/firestore_service.dart
-
-import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/classroom_model.dart';
-import '../models/message_model.dart'; // Duyuru modeli eklendi
+import '../models/community_model.dart';
+import '../models/channel_model.dart';
+import '../models/message_model.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // --- YARDIMCI FONKSİYON: 6 Haneli Rastgele Kod Üretici ---
-  String _generateInviteCode() {
-    const chars =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; // Sadece büyük harf ve rakam
-    Random rnd = Random();
-    return String.fromCharCodes(
-      Iterable.generate(6, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))),
-    );
-  }
-
-  // --- TASK 2: Sınıf Oluşturma ve Benzersiz Kod Atama ---
-  Future<ClassroomModel> createClass({
+  // --- 1. TOPLULUK OLUŞTURMA ---
+  Future<void> createCommunity({
     required String name,
-    required String teacherId,
+    required String description,
+    required String ownerId,
+    required String ownerEmail,
   }) async {
-    String inviteCode = '';
-    bool isUnique = false;
+    final communityRef = await _firestore.collection('communities').add({
+      'name': name,
+      'description': description,
+      'ownerId': ownerId,
+      'members': [ownerId],
+      'allowedEmails': [ownerEmail.toLowerCase()],
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-    // 1. ADIM: Benzersiz (Unique) Kod Bulana Kadar Döngüye Gir
-    while (!isUnique) {
-      inviteCode = _generateInviteCode();
-
-      // Firestore'da 'classrooms' koleksiyonunda bu kod var mı diye bak
-      final snapshot = await _firestore
-          .collection('classrooms')
-          .where('inviteCode', isEqualTo: inviteCode)
-          .get();
-
-      // Eğer sonuç boşsa (kimse kullanmıyorsa), kod benzersizdir!
-      if (snapshot.docs.isEmpty) {
-        isUnique = true;
-      }
-    }
-
-    // 2. ADIM: Firestore'da yeni bir döküman referansı oluştur (ID almak için)
-    final docRef = _firestore.collection('classrooms').doc();
-
-    // 3. ADIM: Modeli Oluştur
-    final newClass = ClassroomModel(
-      id: docRef.id,
-      name: name,
-      teacherId: teacherId,
-      inviteCode: inviteCode,
-      studentIds: [],
+    // Topluluk kurulurken varsayılan 'Genel' kanalını da otomatik açıyoruz
+    await createChannel(
+      communityId: communityRef.id,
+      name: 'Genel',
+      creatorId: ownerId,
     );
-
-    // 4. ADIM: Veritabanına Yaz!
-    await docRef.set(newClass.toMap());
-
-    return newClass;
   }
 
-  // --- TASK 3: Öğrencinin Sınıfa Katılması ---
-  Future<void> joinClass({
-    required String inviteCode,
-    required String studentId,
+  // --- 2. KANAL OLUŞTURMA ---
+  Future<void> createChannel({
+    required String communityId,
+    required String name,
+    required String creatorId,
   }) async {
-    try {
-      final snapshot = await _firestore
-          .collection('classrooms')
-          .where('inviteCode', isEqualTo: inviteCode.trim().toUpperCase())
-          .get();
-
-      if (snapshot.docs.isEmpty) {
-        throw Exception('Geçersiz sınıf kodu! Lütfen kodu kontrol edin.');
-      }
-
-      final classroomDoc = snapshot.docs.first;
-
-      await classroomDoc.reference.update({
-        'studentIds': FieldValue.arrayUnion([studentId]),
-      });
-    } catch (e) {
-      throw Exception('Sınıfa katılırken bir hata oluştu: $e');
-    }
-  }
-
-  // --- SPRINT 4: Duyuruyu (Medya Linkleriyle) Firestore'a Kaydet ---
-  Future<void> sendAnnouncement({
-    required String classroomId,
-    required String teacherId,
-    required String title,
-    required String content,
-    String? imageUrl,
-    String? pdfUrl,
-  }) async {
-    final docRef = _firestore.collection('announcements').doc();
-
-    await docRef.set({
-      'id': docRef.id,
-      'classroomId': classroomId,
-      'teacherId': teacherId,
-      'title': title,
-      'content': content,
-      'createdAt':
-          FieldValue.serverTimestamp(), // Sunucu saati ile garantili kayıt
-      'imageUrl': imageUrl,
-      'pdfUrl': pdfUrl,
+    await _firestore.collection('channels').add({
+      'communityId': communityId,
+      'name': name,
+      'createdBy': creatorId,
+      'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
-  // --- SPRINT 4: Canlı Duyuru Akışı (Real-Time StreamBuilder İçin) ---
-  Stream<List<MessageModel>> getAnnouncements(String classroomId) {
-    return _firestore
-        .collection('announcements')
-        .where('classroomId', isEqualTo: classroomId)
-        .orderBy('createdAt', descending: true) // En yeni duyuru en üstte
-        .snapshots() // Değişiklikleri anlık dinler
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => MessageModel.fromMap(doc.data(), doc.id))
-              .toList();
-        });
+  // --- 3. E-POSTA İLE ÜYE DAVET ETME ---
+  Future<void> inviteMember({
+    required String communityId,
+    required String email,
+  }) async {
+    await _firestore.collection('communities').doc(communityId).update({
+      'allowedEmails': FieldValue.arrayUnion([email.trim().toLowerCase()]),
+    });
+  }
+
+  // --- 4. KANALA MESAJ GÖNDERME ---
+  Future<void> sendMessage({
+    required String channelId,
+    required String senderId,
+    required String senderName,
+    required String content,
+    String? fileUrl,
+  }) async {
+    await _firestore.collection('messages').add({
+      'channelId': channelId,
+      'senderId': senderId,
+      'senderName': senderName,
+      'content': content,
+      'fileUrl': fileUrl, // Eğer PDF/Resim varsa buraya linki gelecek
+      'readBy': [], // Sprint 5 Okundu bilgisi için hazır liste!
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 }
