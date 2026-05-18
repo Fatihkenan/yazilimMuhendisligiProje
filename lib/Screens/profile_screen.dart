@@ -1,7 +1,9 @@
 // lib/screens/profile_screen.dart
+import 'dart:io'; 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart'; 
 import 'welcome_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -14,10 +16,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ImagePicker _picker = ImagePicker(); 
 
   String userName = "Yükleniyor...";
   String userEmail = "Yükleniyor...";
   String kurumKodu = "Yükleniyor...";
+  String? profileImageUrl; 
   bool isLoading = true;
 
   @override
@@ -40,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             userName = data['name'] ?? "Bilinmiyor";
             userEmail = user.email ?? "Bilinmiyor";
             kurumKodu = data['kurumKodu'] ?? "Tanımsız";
+            profileImageUrl = data['profileImageUrl']; 
             isLoading = false;
           });
         }
@@ -52,6 +57,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     }
+  }
+
+  
+  Future<void> _pickProfileImage() async {
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 60, 
+    );
+
+    if (image == null) return;
+
+    final User? user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+     
+      await _firestore.collection('users').doc(user.uid).update({
+        'profileImageUrl': image.path,
+      });
+
+      setState(() {
+        profileImageUrl = image.path;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profil resmi başarıyla güncellendi!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e')),
+        );
+      }
+    }
+  }
+
+  
+  void _showEditNameDialog() {
+    final TextEditingController nameController = TextEditingController(text: userName);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('İsmi Düzenle', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: nameController,
+          decoration: InputDecoration(
+            hintText: "Yeni adınızı girin...",
+            filled: true,
+            fillColor: Colors.grey.shade100,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final String newName = nameController.text.trim();
+              if (newName.isEmpty) return;
+
+              final User? user = _auth.currentUser;
+              if (user == null) return;
+
+              try {
+                await _firestore.collection('users').doc(user.uid).update({
+                  'name': newName,
+                });
+                setState(() {
+                  userName = newName;
+                });
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Hata: $e')),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -91,28 +194,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               // Avatar ve isim
               const SizedBox(height: 10),
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
+              GestureDetector(
+                onTap: _pickProfileImage, 
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: profileImageUrl != null
+                            ? (profileImageUrl!.startsWith('http')
+                                ? Image.network(profileImageUrl!, fit: BoxFit.cover, width: 90, height: 90)
+                                : Image.file(File(profileImageUrl!), fit: BoxFit.cover, width: 90, height: 90))
+                            : const Icon(
+                                Icons.person,
+                                size: 50,
+                                color: Color(0xFF6366F1),
+                              ),
+                      ),
+                    ),
+                    
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt, size: 18, color: Color(0xFF8B5CF6)),
+                      ),
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.person,
-                  size: 50,
-                  color: Color(0xFF6366F1),
-                ),
               ),
               const SizedBox(height: 12),
-              isLoading 
+              isLoading
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
                       userName,
@@ -142,7 +271,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       topRight: Radius.circular(28),
                     ),
                   ),
-                  child: isLoading 
+                  child: isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : ListView(
                           padding: const EdgeInsets.all(20),
@@ -152,10 +281,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             // Bilgi kartı
                             _buildSectionTitle('Hesap Bilgileri'),
                             const SizedBox(height: 12),
-                            _buildInfoCard(
-                              icon: Icons.person_outline,
-                              label: 'Ad Soyad',
-                              value: userName,
+                            GestureDetector(
+                              onTap: _showEditNameDialog, 
+                              child: _buildInfoCard(
+                                icon: Icons.person_outline,
+                                label: 'Ad Soyad (Düzenlemek için dokunun)',
+                                value: userName,
+                              ),
                             ),
                             const SizedBox(height: 10),
                             _buildInfoCard(
@@ -270,23 +402,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Icon(icon, color: const Color(0xFF6366F1), size: 20),
           ),
           const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: valueColor,
-                  fontWeight: valueBold ? FontWeight.bold : FontWeight.w500,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: valueColor,
+                    fontWeight: valueBold ? FontWeight.bold : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -352,7 +486,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Çıkış Yap',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        content: const Text('Hesabınızdan çıkış yapmak istediğinize emin misiniz?'),
+        content: const Text('Hesabınızdançıkış yapmak istediğinize emin misiniz?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

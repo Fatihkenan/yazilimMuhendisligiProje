@@ -1,6 +1,8 @@
+import 'dart:io'; 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart'; 
 
 class ChatScreen extends StatefulWidget {
   final String channelId;
@@ -24,6 +26,38 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ImagePicker _picker = ImagePicker(); 
+
+  void _pickAndUploadImage() async {
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70, 
+    );
+
+    if (image == null) return;
+
+    final User? user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      String simulatedImageUrl = image.path; 
+
+      await _firestore.collection('messages').add({
+        'channelId': widget.channelId,
+        'text': '', 
+        'imageUrl': simulatedImageUrl, 
+        'senderId': user.uid,
+        'senderEmail': user.email,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fotoğraf gönderilemedi: $e')),
+        );
+      }
+    }
+  }
 
   void _sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
@@ -35,23 +69,23 @@ class _ChatScreenState extends State<ChatScreen> {
       await _firestore.collection('messages').add({
         'channelId': widget.channelId,
         'text': _messageController.text.trim(),
+        'imageUrl': null, 
         'senderId': user.uid,
         'senderEmail': user.email,
         'createdAt': FieldValue.serverTimestamp(),
       });
       _messageController.clear();
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Hata: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // KİLİT MEKANİZMASI: Eğer kanal duyuru kanalıysa (!widget.isReadOnly)
-    // VEYA giren kişi kurucuysa (widget.isOwner) yazabilir.
     final bool canType = !widget.isReadOnly || widget.isOwner;
 
     return Scaffold(
@@ -77,33 +111,35 @@ class _ChatScreenState extends State<ChatScreen> {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.hasError)
+                if (snapshot.hasError) {
                   return Center(child: Text('Hata: ${snapshot.error}'));
-                if (snapshot.connectionState == ConnectionState.waiting)
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
 
                 final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty)
+                if (docs.isEmpty) {
                   return const Center(
                     child: Text(
                       'Bu kanalda henüz mesaj yok.',
                       style: TextStyle(color: Colors.grey),
                     ),
                   );
+                }
 
                 return ListView.builder(
-                  reverse: true, // Mesajların alttan üste birikmesi için
+                  reverse: true,
                   padding: const EdgeInsets.all(16),
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
-                    final bool isMe =
-                        data['senderId'] == _auth.currentUser?.uid;
+                    final bool isMe = data['senderId'] == _auth.currentUser?.uid;
+                    final String? imageUrl = data['imageUrl'];
+                    final String text = data['text'] ?? '';
 
                     return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.symmetric(
@@ -113,12 +149,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         decoration: BoxDecoration(
                           color: isMe ? const Color(0xFF4F46E5) : Colors.white,
                           borderRadius: BorderRadius.circular(16).copyWith(
-                            bottomRight: isMe
-                                ? const Radius.circular(0)
-                                : const Radius.circular(16),
-                            bottomLeft: !isMe
-                                ? const Radius.circular(0)
-                                : const Radius.circular(16),
+                            bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(16),
+                            bottomLeft: !isMe ? const Radius.circular(0) : const Radius.circular(16),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -130,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min, 
                           children: [
                             if (!isMe)
                               Text(
@@ -141,13 +174,26 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                               ),
                             if (!isMe) const SizedBox(height: 4),
-                            Text(
-                              data['text'] ?? '',
-                              style: TextStyle(
-                                color: isMe ? Colors.white : Colors.black87,
-                                fontSize: 15,
+                            
+                            
+                            if (imageUrl != null && imageUrl.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: imageUrl.startsWith('http')
+                                      ? Image.network(imageUrl, width: 200, height: 150, fit: BoxFit.cover)
+                                      : Image.file(File(imageUrl), width: 200, height: 150, fit: BoxFit.cover),
+                                ),
+                              )
+                            else if (text.isNotEmpty)
+                              Text(
+                                text,
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black87,
+                                  fontSize: 15,
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -158,7 +204,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // YAZMA ALANI (GÜVENLİK KONTROLÜ)
           if (canType)
             Container(
               padding: const EdgeInsets.all(16),
@@ -175,6 +220,11 @@ class _ChatScreenState extends State<ChatScreen> {
               child: SafeArea(
                 child: Row(
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, color: Color(0xFF4F46E5), size: 28),
+                      onPressed: _pickAndUploadImage,
+                    ),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: TextField(
                         controller: _messageController,
