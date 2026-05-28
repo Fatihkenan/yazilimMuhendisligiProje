@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'login_screen.dart';
 import 'channels_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,16 +25,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _logout() async {
-    await _auth.signOut();
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
-  }
-
   void _createTeamsCommunity({required String templateName}) async {
     final nameController = TextEditingController();
     final descController = TextEditingController();
@@ -48,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return AlertDialog(
               backgroundColor: const Color(0xFF292929),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
               title: const Text(
                 'Yeni Topluluk Oluştur',
@@ -79,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: descController,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
-                      labelText: 'Açıklama',
+                      labelText: 'Kısa Açıklama',
                       labelStyle: TextStyle(color: Colors.grey),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(color: Colors.grey),
@@ -108,7 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? null
                       : () async {
                           if (nameController.text.trim().isEmpty) return;
-
                           setState(() => isCreating = true);
                           try {
                             final User? user = _auth.currentUser;
@@ -125,12 +115,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   'createdAt': FieldValue.serverTimestamp(),
                                 });
 
-                            // Varsayılan Genel kanalı HERKESE AÇIK olarak kurulur
                             await _firestore.collection('channels').add({
                               'communityId': communityRef.id,
                               'name': 'Genel',
                               'createdBy': user.uid,
-                              'isReadOnly': false, // HERKESE AÇIK
+                              'isReadOnly': false,
                               'createdAt': FieldValue.serverTimestamp(),
                             });
 
@@ -153,7 +142,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         )
                       : const Text(
                           'Oluştur',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ],
@@ -204,14 +196,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     .collection('communities')
                     .doc(communityId)
                     .delete();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Topluluk silindi.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
               } catch (e) {
                 ScaffoldMessenger.of(
                   context,
@@ -236,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final User? currentUser = _auth.currentUser;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: currentUser == null
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
@@ -245,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
-                  SliverToBoxAdapter(child: _buildTopNavBar()),
+                  SliverToBoxAdapter(child: _buildTopNavBar(context)),
                   SliverToBoxAdapter(
                     child: Container(
                       margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
@@ -259,9 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(
-                              0xFF4F46E5,
-                            ).withValues(alpha: 0.3),
+                            color: const Color(0xFF4F46E5).withOpacity(0.3),
                             blurRadius: 15,
                             offset: const Offset(0, 8),
                           ),
@@ -279,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
+                                  color: Colors.white.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Row(
@@ -306,8 +288,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     _createTeamsCommunity(templateName: ''),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
+                                    horizontal: 16,
+                                    vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
                                     color: Colors.white,
@@ -325,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         'Oluştur',
                                         style: TextStyle(
                                           color: Color(0xFF4F46E5),
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w800,
                                           fontSize: 13,
                                         ),
                                       ),
@@ -350,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             currentUser.email ?? '',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
+                              color: Colors.white.withOpacity(0.8),
                               fontSize: 16,
                             ),
                           ),
@@ -425,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Container(
                                   padding: const EdgeInsets.all(20),
                                   decoration: const BoxDecoration(
-                                    color: Color(0xFFF3F4F6),
+                                    color: Color(0xFFF1F5F9),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -490,11 +472,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.03),
+                                  color: Colors.black.withOpacity(0.04),
                                   blurRadius: 10,
                                   offset: const Offset(0, 4),
                                 ),
                               ],
+                              border: Border.all(color: Colors.grey.shade100),
                             ),
                             child: Material(
                               color: Colors.transparent,
@@ -515,17 +498,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                   );
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
+                                  padding: const EdgeInsets.all(20.0),
                                   child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
                                     children: [
+                                      // Büyük Şık İkon Kutusu
                                       Container(
-                                        width: 56,
-                                        height: 56,
+                                        width: 60,
+                                        height: 60,
                                         decoration: BoxDecoration(
                                           gradient: const LinearGradient(
                                             colors: [
                                               Color(0xFFEEF2FF),
-                                              Color(0xFFE0E7FF),
+                                              Color(0xFFC7D2FE),
                                             ],
                                             begin: Alignment.topLeft,
                                             end: Alignment.bottomRight,
@@ -543,100 +529,97 @@ class _HomeScreenState extends State<HomeScreen> {
                                             style: const TextStyle(
                                               color: Color(0xFF4F46E5),
                                               fontSize: 24,
-                                              fontWeight: FontWeight.bold,
+                                              fontWeight: FontWeight.w900,
                                             ),
                                           ),
                                         ),
                                       ),
                                       const SizedBox(width: 16),
+                                      // Metin Alanı
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    data['name'] ??
-                                                        'İsimsiz Topluluk',
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 17,
-                                                      color: Color(0xFF1F2937),
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                if (isOwner)
-                                                  Container(
-                                                    margin:
-                                                        const EdgeInsets.only(
-                                                          left: 8,
-                                                        ),
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(
-                                                        0xFFECFDF5,
-                                                      ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: const Text(
-                                                      'Kurucu',
-                                                      style: TextStyle(
-                                                        color: Color(
-                                                          0xFF059669,
-                                                        ),
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 6),
                                             Text(
-                                              data['description'] ?? '',
+                                              data['name'] ??
+                                                  'İsimsiz Topluluk',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 18,
+                                                color: Color(0xFF1F2937),
+                                              ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF6B7280),
-                                                fontSize: 14,
-                                              ),
                                             ),
+                                            const SizedBox(height: 6),
+                                            if (data['description'] != null &&
+                                                data['description']
+                                                    .toString()
+                                                    .isNotEmpty)
+                                              Text(
+                                                data['description'] ?? '',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade500,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            const SizedBox(height: 8),
+                                            if (isOwner)
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.green.shade50,
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: const Text(
+                                                  'Kurucu Yetkisi',
+                                                  style: TextStyle(
+                                                    color: Colors.green,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),
+                                      // Sağ Aksiyonlar (Çöp kutusu çok şık)
                                       if (isOwner)
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                            color: Color(0xFFEF4444),
+                                        InkWell(
+                                          onTap: () => _confirmDeleteCommunity(
+                                            filteredDocs[index].id,
+                                            data['name'],
                                           ),
-                                          onPressed: () =>
-                                              _confirmDeleteCommunity(
-                                                filteredDocs[index].id,
-                                                data['name'],
-                                              ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: const Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.red,
+                                              size: 22,
+                                            ),
+                                          ),
                                         )
                                       else
-                                        const Padding(
-                                          padding: EdgeInsets.only(left: 8.0),
-                                          child: Icon(
-                                            Icons.chevron_right,
-                                            color: Color(0xFFD1D5DB),
-                                          ),
+                                        Icon(
+                                          Icons.arrow_forward_ios_rounded,
+                                          color: Colors.grey.shade400,
+                                          size: 20,
                                         ),
                                     ],
                                   ),
@@ -655,7 +638,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTopNavBar() {
+  Widget _buildTopNavBar(BuildContext context) {
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -663,17 +646,18 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(
             child: Container(
-              height: 40,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 5,
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
+                border: Border.all(color: Colors.grey.shade200),
               ),
               child: TextField(
                 controller: _searchController,
@@ -699,23 +683,36 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 16),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
-              onPressed: _logout,
-              tooltip: 'Çıkış Yap',
+          const SizedBox(width: 12),
+          // PROFiLE GİTME BUTONU (ŞIKLAŞTIRILDI)
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfileScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              height: 44,
+              width: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: const Icon(
+                Icons.person_outline,
+                color: Color(0xFF4F46E5),
+                size: 22,
+              ),
             ),
           ),
         ],
