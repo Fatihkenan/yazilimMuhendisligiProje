@@ -1,10 +1,16 @@
+// ignore_for_file: dead_code, curly_braces_in_flow_control_structures, use_build_context_synchronously, empty_catches, deprecated_member_use, unused_local_variable, unused_element
+
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart' as fp;
-import 'package:url_launcher/url_launcher.dart';
+
+// Web için dart:html import
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 class ChatScreen extends StatefulWidget {
   final String channelId;
@@ -31,10 +37,21 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _titleController = TextEditingController();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FocusNode _messageFocus = FocusNode();
 
   bool _isAnnouncement = false;
   String _currentUserName = '';
   bool _isUploading = false;
+
+  // ─── ميزات جديدة ─────────────────────────────────────────────
+  Map<String, dynamic>? _replyingTo;   // Reply
+  String? _editingDocId;               // تعديل الرسالة
+  bool _isSearching = false;           // بحث
+  String _searchQuery = '';            // بحث
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  // ─── DOSYA BOYUTU SINIRI: 700 KB
+  static const int _maxFileSizeBytes = 700 * 1024;
 
   @override
   void initState() {
@@ -44,42 +61,38 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadCurrentUserName() async {
     final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-        if (doc.exists && doc.data() != null) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (mounted) {
-            setState(() {
-              _currentUserName =
-                  data['fullName'] ??
-                  data['name'] ??
-                  user.displayName ??
-                  _generateFallbackName(user.email);
-            });
-          }
-        } else {
-          if (mounted) {
-            setState(
-              () => _currentUserName =
-                  user.displayName ?? _generateFallbackName(user.email),
-            );
-          }
-        }
-      } catch (e) {
+    if (user == null) return;
+    try {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
         if (mounted) {
-          setState(() => _currentUserName = _generateFallbackName(user.email));
+          setState(() {
+            _currentUserName =
+                data['fullName'] ??
+                data['name'] ??
+                data['adSoyad'] ??
+                user.displayName ??
+                _fallbackName(user.email);
+          });
         }
+      } else {
+        if (mounted) {
+          setState(() => _currentUserName =
+              user.displayName ?? _fallbackName(user.email));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _currentUserName = _fallbackName(user.email));
       }
     }
   }
 
-  String _generateFallbackName(String? email) {
+  String _fallbackName(String? email) {
     if (email == null) return 'Kullanıcı';
-    String prefix = email.split('@')[0];
-    if (prefix.length < 3 || int.tryParse(prefix) != null) {
-      return 'Üye $prefix';
-    }
+    final prefix = email.split('@')[0];
+    if (prefix.length < 2) return 'Üye';
     return prefix[0].toUpperCase() + prefix.substring(1);
   }
 
@@ -87,45 +100,46 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _messageController.dispose();
     _titleController.dispose();
+    _messageFocus.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  String _formatTime(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-    final date = timestamp.toDate();
-    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  String _formatTime(Timestamp? ts) {
+    if (ts == null) return '';
+    final d = ts.toDate();
+    final now = DateTime.now();
+    final diff = now.difference(d);
+    if (diff.inDays == 0) {
+      return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays == 1) {
+      return 'Dün ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    } else {
+      return '${d.day}/${d.month} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    }
   }
 
-  // --- EVRENSEL DOSYA İNDİRİCİ (HEM WEB HEM MOBİL UYUMLU) ---
-  Future<void> _downloadFile(String base64Data, String fileName) async {
+  // ─── DOSYA İNDİR — WEB UYUMLU ────────────────────────────────────────────────
+  void _downloadFile(String base64Data, String? fileName) {
     try {
-      String mimeType = 'application/octet-stream';
-      final ext = fileName.split('.').last.toLowerCase();
+      if (kIsWeb) {
+        final String ext = (fileName ?? 'dosya').split('.').last.toLowerCase();
+        String mimeType = 'application/octet-stream';
+        if (ext == 'pdf') mimeType = 'application/pdf';
+        else if (ext == 'png') mimeType = 'image/png';
+        else if (['jpg', 'jpeg'].contains(ext)) mimeType = 'image/jpeg';
+        else if (ext == 'webp') mimeType = 'image/webp';
+        else if (ext == 'gif') mimeType = 'image/gif';
+        else if (['doc', 'docx'].contains(ext)) mimeType = 'application/msword';
+        else if (ext == 'txt') mimeType = 'text/plain';
 
-      if (ext == 'pdf')
-        mimeType = 'application/pdf';
-      else if (ext == 'png')
-        mimeType = 'image/png';
-      else if (ext == 'jpg' || ext == 'jpeg')
-        mimeType = 'image/jpeg';
-      else if (ext == 'webp')
-        mimeType = 'image/webp';
-
-      // Base64 verisini evrensel bir Data URI'ye çeviriyoruz
-      final Uri uri = Uri.parse('data:$mimeType;base64,$base64Data');
-
-      // url_launcher paketi bunu hem tarayıcıda hem telefonda algılar
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Dosya indirme tetiklenemedi.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
+        final bytes = base64Decode(base64Data);
+        final blob = html.Blob([bytes], mimeType);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement(href: url)
+          ..setAttribute('download', fileName ?? 'dosya')
+          ..click();
+        html.Url.revokeObjectUrl(url);
       }
     } catch (e) {
       if (mounted) {
@@ -139,69 +153,92 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // --- DOSYA/RESİM SEÇİCİ ---
-  Future<void> _pickAndUploadFile() async {
+  // ─── DOSYA SEÇ & YÜKLE ───────────────────────────────────────────────────────
+  Future<void> _pickFile() async {
     try {
-      fp.FilePickerResult? result = await fp.FilePicker.platform.pickFiles(
+      final result = await fp.FilePicker.platform.pickFiles(
         type: fp.FileType.any,
         withData: true,
       );
 
-      if (result != null && result.files.first.bytes != null) {
-        final Uint8List fileBytes = result.files.first.bytes!;
-        final String fileName = result.files.first.name;
+      if (result == null || result.files.first.bytes == null) return;
 
-        if (fileBytes.lengthInBytes > 750000) {
+      final Uint8List bytes = result.files.first.bytes!;
+      final String fileName = result.files.first.name;
+      final int sizeInBytes = bytes.lengthInBytes;
+
+      if (sizeInBytes > _maxFileSizeBytes) {
+        if (mounted) {
+          final sizeKB = (sizeInBytes / 1024).toStringAsFixed(0);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Dosya çok büyük! Lütfen 750 KB altı bir dosya seçin.',
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Dosya çok büyük! ($sizeKB KB)\nMaksimum: 700 KB',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
               ),
-              backgroundColor: Colors.red,
+              backgroundColor: Colors.red.shade700,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
             ),
           );
-          return;
         }
-
-        setState(() => _isUploading = true);
-
-        String base64String = base64Encode(fileBytes);
-        _sendMessage(base64Data: base64String, fileName: fileName);
+        return; 
       }
+
+      setState(() => _isUploading = true);
+      final String base64Str = base64Encode(bytes);
+      await _sendMessage(base64Data: base64Str, fileName: fileName);
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Seçim hatası: $e')));
-      setState(() => _isUploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Dosya seçim hatası: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  // --- MESAJ GÖNDERME ---
-  void _sendMessage({String? base64Data, String? fileName}) async {
+  // ─── MESAJ GÖNDER ─────────────────────────────────────────────────────────────
+  Future<void> _sendMessage({String? base64Data, String? fileName}) async {
     final text = _messageController.text.trim();
-
     if (text.isEmpty && base64Data == null) {
       if (mounted) setState(() => _isUploading = false);
       return;
     }
-
-    if (_isAnnouncement &&
-        widget.isOwner &&
-        _titleController.text.trim().isEmpty) {
+    
+    // ── تعديل رسالة موجودة ──────────────────────────────────────
+    if (_editingDocId != null) {
+      await _firestore.collection('messages').doc(_editingDocId).update({
+        'text': text,
+        'edited': true,
+      });
+      if (mounted) setState(() { _editingDocId = null; _isUploading = false; });
+      _messageController.clear();
+      return;
+    }
+    
+    if (_isAnnouncement && widget.isOwner && _titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lütfen duyuru için bir başlık girin!'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('Duyuru için başlık gerekli!'), backgroundColor: Colors.orange),
       );
       if (mounted) setState(() => _isUploading = false);
       return;
     }
-
-    final User? user = _auth.currentUser;
+    
+    final user = _auth.currentUser;
     if (user == null) return;
-
+    
     try {
       await _firestore.collection('messages').add({
         'channelId': widget.channelId,
@@ -210,36 +247,195 @@ class _ChatScreenState extends State<ChatScreen> {
         'senderName': _currentUserName,
         'senderEmail': user.email,
         'type': _isAnnouncement && widget.isOwner ? 'announcement' : 'post',
-        'title': _isAnnouncement && widget.isOwner
-            ? _titleController.text.trim().toUpperCase()
-            : '',
+        'title': _isAnnouncement && widget.isOwner ? _titleController.text.trim().toUpperCase() : '',
         'base64Data': base64Data,
         'fileName': fileName,
+        'replyTo': _replyingTo,   // ← Reply
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      _messageController.clear();
-      _titleController.clear();
-      if (mounted) {
-        setState(() {
-          _isAnnouncement = false;
-          _isUploading = false;
+      // ── تحديث unreadBy لإظهار الشارة الحمراء للأعضاء الآخرين ─────────────────────
+      // ── تحديث الإشعارات للقنوات (تم إصلاح خطأ القائمة الثابتة) ──
+      final channelDoc = await _firestore.collection('channels').doc(widget.channelId).get();
+      final commId = channelDoc.data()?['communityId'];
+      if (commId != null) {
+        final commDoc = await _firestore.collection('communities').doc(commId).get();
+        
+        // استخدام List.from ضروري جداً لتجنب خطأ القائمة غير القابلة للتعديل
+        final List<dynamic> members = List.from(commDoc.data()?['members'] ?? []);
+        members.remove(user.uid); // إزالة المرسل حتى لا يصله إشعار برسالته
+        
+        await _firestore.collection('channels').doc(widget.channelId).update({
+          'unreadBy': members,
         });
       }
+      // ────────────────────────────────────────────────────────
+      
+      // ── يكتب الآن — temizle ──────────────────────────────────
+      _firestore.collection('typing').doc(widget.channelId).update({
+        user.uid: FieldValue.delete(),
+      }).catchError((_) {});
+      
+      _messageController.clear();
+      _titleController.clear();
+      if (mounted) setState(() {
+        _isAnnouncement = false;
+        _isUploading = false;
+        _replyingTo = null;
+      });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Hata: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
         setState(() => _isUploading = false);
       }
     }
   }
 
-  void _deleteMessage(String docId) async {
+  // ─── يكتب الآن ────────────────────────────────────────────────
+  void _onTyping() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    _firestore.collection('typing').doc(widget.channelId).set({
+      user.uid: {
+        'name': _currentUserName,
+        'at': FieldValue.serverTimestamp(),
+      }
+    }, SetOptions(merge: true));
+
+    // 3 saniye sonra sil
+    Future.delayed(const Duration(seconds: 3), () {
+      _firestore.collection('typing').doc(widget.channelId).update({
+        user.uid: FieldValue.delete(),
+      }).catchError((_) {});
+    });
+  }
+
+  // ... باقي الكود (Reactions, Message Options, Build methods, etc.) كما هو بدون تغيير
+
+  // ─── Reactions ────────────────────────────────────────────────
+  void _addReaction(String docId, String emoji) {
+    final uid = _auth.currentUser?.uid ?? '';
+    _firestore.collection('messages').doc(docId).update({
+      'reactions.$emoji': FieldValue.arrayUnion([uid]),
+    });
+  }
+
+  void _removeReaction(String docId, String emoji) {
+    final uid = _auth.currentUser?.uid ?? '';
+    _firestore.collection('messages').doc(docId).update({
+      'reactions.$emoji': FieldValue.arrayRemove([uid]),
+    });
+  }
+
+  void _showReactionPicker(String docId) {
+    final emojis = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(16),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: emojis.map((e) => GestureDetector(
+            onTap: () { Navigator.pop(ctx); _addReaction(docId, e); },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text(e, style: const TextStyle(fontSize: 28)),
+            ),
+          )).toList(),
+        ),
+      ),
+    );
+  }
+
+  void _showMessageOptions(String docId, Map data, bool isMe) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Reactions
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['👍','❤️','😂','😮','😢','🎉'].map((e) =>
+                  GestureDetector(
+                    onTap: () { Navigator.pop(ctx); _addReaction(docId, e); },
+                    child: Text(e, style: const TextStyle(fontSize: 30)),
+                  ),
+                ).toList(),
+              ),
+            ),
+            const Divider(),
+            // Reply
+            ListTile(
+              leading: const Icon(Icons.reply, color: Color(0xFF4F46E5)),
+              title: const Text('Yanıtla'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _replyingTo = {
+                  'text': data['text'] ?? '',
+                  'senderName': data['senderName'] ?? '',
+                  'docId': docId,
+                });
+              },
+            ),
+            // Pin — sadece owner
+            if (widget.isOwner)
+              ListTile(
+                leading: const Icon(Icons.push_pin_outlined, color: Colors.orange),
+                title: Text(data['pinned'] == true ? 'Sabitlemeyi Kaldır' : 'Sabitle'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _firestore.collection('messages').doc(docId).update({
+                    'pinned': !(data['pinned'] == true),
+                  });
+                },
+              ),
+            // Edit — sadece kendi mesajın
+            if (isMe)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                title: const Text('Düzenle'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _editingDocId = docId;
+                    _messageController.text = data['text'] ?? '';
+                  });
+                },
+              ),
+            // Delete
+            if (isMe || widget.isOwner)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Sil', style: TextStyle(color: Colors.red)),
+                onTap: () { Navigator.pop(ctx); _deleteMessage(docId); },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _deleteMessage(String docId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Mesajı Sil',
@@ -248,16 +444,14 @@ class _ChatScreenState extends State<ChatScreen> {
         content: const Text('Bu mesajı kalıcı olarak silmek istiyor musunuz?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('İptal', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
-              Navigator.pop(context);
-              try {
-                await _firestore.collection('messages').doc(docId).delete();
-              } catch (e) {}
+              Navigator.pop(ctx);
+              await _firestore.collection('messages').doc(docId).delete();
             },
             child: const Text('Sil', style: TextStyle(color: Colors.white)),
           ),
@@ -289,13 +483,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               child: Icon(
                 widget.isReadOnly ? Icons.campaign : Icons.tag,
-                size: 20,
+                size: 18,
                 color: widget.isReadOnly
                     ? Colors.orange
                     : const Color(0xFF4F46E5),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,29 +499,96 @@ class _ChatScreenState extends State<ChatScreen> {
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1F2937),
-                      fontSize: 18,
+                      fontSize: 16,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    widget.isReadOnly ? 'Sadece Duyuru Kanalı' : 'Genel Sohbet',
+                    widget.isReadOnly ? 'Duyuru Kanalı' : 'Genel Sohbet',
                     style: TextStyle(
                       color: Colors.grey.shade500,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.normal,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search,
+                color: const Color(0xFF4F46E5)),
+            onPressed: () => setState(() {
+              _isSearching = !_isSearching;
+              _searchQuery = '';
+              _searchCtrl.clear();
+            }),
+          ),
+        ],
       ),
       body: Column(
         children: [
+          // ─── Sabitlenmiş mesaj banner ─────────────────────────────────
+          StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('messages')
+                .where('channelId', isEqualTo: widget.channelId)
+                .where('pinned', isEqualTo: true)
+                .limit(1)
+                .snapshots(),
+            builder: (ctx, snap) {
+              final docs = snap.data?.docs ?? [];
+              if (docs.isEmpty) return const SizedBox();
+              final text = (docs.first.data() as Map)['text'] ?? '';
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border(bottom: BorderSide(color: Colors.orange.shade200)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.push_pin, color: Colors.orange, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        text,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          
+          if (_isSearching)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.white,
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+                decoration: InputDecoration(
+                  hintText: 'Mesajlarda ara...',
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF4F46E5)),
+                  filled: true,
+                  fillColor: const Color(0xFFF1F5F9),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+            
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
@@ -335,13 +596,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   .where('channelId', isEqualTo: widget.channelId)
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError)
+              builder: (ctx, snap) {
+                if (snap.hasError)
                   return const Center(child: Text('Bir hata oluştu.'));
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  return const Center(child: CircularProgressIndicator());
+                if (snap.connectionState == ConnectionState.waiting)
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
+                  );
 
-                final docs = snapshot.data?.docs ?? [];
+                final docs = (snap.data?.docs ?? []).where((d) {
+                  if (_searchQuery.isEmpty) return true;
+                  final text = (d.data() as Map)['text']?.toString().toLowerCase() ?? '';
+                  return text.contains(_searchQuery);
+                }).toList();
+                
                 if (docs.isEmpty) {
                   return Center(
                     child: Column(
@@ -351,14 +619,14 @@ class _ChatScreenState extends State<ChatScreen> {
                           widget.isReadOnly
                               ? Icons.campaign_outlined
                               : Icons.chat_bubble_outline,
-                          size: 64,
+                          size: 56,
                           color: Colors.grey.shade300,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         Text(
                           widget.isReadOnly
-                              ? 'Henüz duyuru yapılmadı.'
-                              : 'Sohbeti başlatan ilk kişi olun!',
+                              ? 'Henüz duyuru yok'
+                              : 'Sohbeti başlatan ilk kişi ol!',
                           style: TextStyle(color: Colors.grey.shade500),
                         ),
                       ],
@@ -369,664 +637,39 @@ class _ChatScreenState extends State<ChatScreen> {
                 return ListView.builder(
                   reverse: true,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 20,
+                    horizontal: 14,
+                    vertical: 16,
                   ),
                   itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final data = docs[index].data() as Map<String, dynamic>;
+                  itemBuilder: (ctx, i) {
+                    final data = docs[i].data() as Map<String, dynamic>;
                     final bool isMe =
                         data['senderId'] == _auth.currentUser?.uid;
-                    final bool isAnnouncement = data['type'] == 'announcement';
+                    final bool isAnn = data['type'] == 'announcement';
                     final bool canDelete = isMe || widget.isOwner;
-
-                    final String displaySenderName =
-                        data['senderName'] ??
+                    final String senderName = data['senderName'] ??
                         data['senderEmail']?.toString().split('@')[0] ??
                         'Bilinmeyen';
-                    final String timeStr = _formatTime(
-                      data['createdAt'] as Timestamp?,
-                    );
-                    final bool isMessageOwner =
+                    final String timeStr =
+                        _formatTime(data['createdAt'] as Timestamp?);
+                    final bool isOwnerMsg =
                         data['senderId'] == widget.ownerId;
+                    final String? base64 = data['base64Data'];
+                    final String? fname = data['fileName'];
+                    final bool isImg = fname != null &&
+                        RegExp(r'\.(jpg|jpeg|png|webp|gif)$',
+                                caseSensitive: false)
+                            .hasMatch(fname);
 
-                    final String? base64Data = data['base64Data'];
-                    final String? fileName = data['fileName'];
-                    final bool isImage =
-                        fileName != null &&
-                        (fileName.toLowerCase().endsWith('.jpg') ||
-                            fileName.toLowerCase().endsWith('.png') ||
-                            fileName.toLowerCase().endsWith('.jpeg') ||
-                            fileName.toLowerCase().endsWith('.webp'));
-
-                    // --- DUYURU KARTI ---
-                    if (isAnnouncement) {
-                      return GestureDetector(
-                        onLongPress: canDelete
-                            ? () => _deleteMessage(docs[index].id)
-                            : null,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 24),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: IntrinsicHeight(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    color: const Color(0xFF6366F1),
-                                  ),
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.all(
-                                                  6,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.orange.shade50,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.campaign,
-                                                  color: Colors.orange,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: Text(
-                                                  data['title'] ??
-                                                      'ÖNEMLİ DUYURU',
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF1F2937),
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 16,
-                                                  ),
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                            child: Divider(height: 1),
-                                          ),
-
-                                          // İNDİRİLEBİLİR DOSYA/RESİM (DUYURU)
-                                          if (base64Data != null)
-                                            Container(
-                                              margin: const EdgeInsets.only(
-                                                bottom: 12,
-                                              ),
-                                              child: isImage
-                                                  ? Stack(
-                                                      alignment:
-                                                          Alignment.bottomRight,
-                                                      children: [
-                                                        ClipRRect(
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                12,
-                                                              ),
-                                                          child: Image.memory(
-                                                            base64Decode(
-                                                              base64Data,
-                                                            ),
-                                                            fit: BoxFit.cover,
-                                                          ),
-                                                        ),
-                                                        Padding(
-                                                          padding:
-                                                              const EdgeInsets.all(
-                                                                8.0,
-                                                              ),
-                                                          child: InkWell(
-                                                            onTap: () =>
-                                                                _downloadFile(
-                                                                  base64Data,
-                                                                  fileName ??
-                                                                      'resim.png',
-                                                                ),
-                                                            child: Container(
-                                                              padding:
-                                                                  const EdgeInsets.all(
-                                                                    8,
-                                                                  ),
-                                                              decoration:
-                                                                  const BoxDecoration(
-                                                                    color: Colors
-                                                                        .black54,
-                                                                    shape: BoxShape
-                                                                        .circle,
-                                                                  ),
-                                                              child: const Icon(
-                                                                Icons.download,
-                                                                color: Colors
-                                                                    .white,
-                                                                size: 20,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    )
-                                                  : InkWell(
-                                                      onTap: () =>
-                                                          _downloadFile(
-                                                            base64Data,
-                                                            fileName ?? 'dosya',
-                                                          ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
-                                                      child: Container(
-                                                        padding:
-                                                            const EdgeInsets.all(
-                                                              12,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors
-                                                              .grey
-                                                              .shade100,
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                12,
-                                                              ),
-                                                          border: Border.all(
-                                                            color: Colors
-                                                                .grey
-                                                                .shade300,
-                                                          ),
-                                                        ),
-                                                        child: Row(
-                                                          children: [
-                                                            const Icon(
-                                                              Icons
-                                                                  .insert_drive_file,
-                                                              color: Color(
-                                                                0xFF4F46E5,
-                                                              ),
-                                                            ),
-                                                            const SizedBox(
-                                                              width: 8,
-                                                            ),
-                                                            Expanded(
-                                                              child: Text(
-                                                                fileName ??
-                                                                    'Ekli Dosya',
-                                                                style: const TextStyle(
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  color: Color(
-                                                                    0xFF4F46E5,
-                                                                  ),
-                                                                ),
-                                                                maxLines: 1,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                              ),
-                                                            ),
-                                                            const Icon(
-                                                              Icons
-                                                                  .download_rounded,
-                                                              color: Color(
-                                                                0xFF4F46E5,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    ),
-                                            ),
-
-                                          if (data['text'] != null &&
-                                              data['text']
-                                                  .toString()
-                                                  .isNotEmpty)
-                                            Text(
-                                              data['text'],
-                                              style: const TextStyle(
-                                                color: Color(0xFF4B5563),
-                                                fontSize: 15,
-                                                height: 1.5,
-                                              ),
-                                            ),
-                                          const SizedBox(height: 16),
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Row(
-                                                  children: [
-                                                    CircleAvatar(
-                                                      radius: 12,
-                                                      backgroundColor:
-                                                          const Color(
-                                                            0xFFEEF2FF,
-                                                          ),
-                                                      child: Text(
-                                                        displaySenderName
-                                                            .substring(0, 1)
-                                                            .toUpperCase(),
-                                                        style: const TextStyle(
-                                                          color: Color(
-                                                            0xFF4F46E5,
-                                                          ),
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Flexible(
-                                                      child: Text(
-                                                        displaySenderName,
-                                                        style: TextStyle(
-                                                          color: Colors
-                                                              .grey
-                                                              .shade600,
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ),
-                                                    if (isMessageOwner)
-                                                      Container(
-                                                        margin:
-                                                            const EdgeInsets.only(
-                                                              left: 6,
-                                                            ),
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 6,
-                                                              vertical: 2,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: Colors
-                                                              .green
-                                                              .shade50,
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                4,
-                                                              ),
-                                                        ),
-                                                        child: const Text(
-                                                          'Kurucu',
-                                                          style: TextStyle(
-                                                            color: Colors.green,
-                                                            fontSize: 9,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                timeStr,
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade400,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                    if (isAnn) {
+                      return _buildAnnouncementCard(
+                        docs[i].id, data, senderName, timeStr,
+                        isOwnerMsg, base64, fname, isImg, canDelete,
                       );
                     }
-
-                    // --- NORMAL GÖNDERİ ---
-                    return GestureDetector(
-                      onLongPress: canDelete
-                          ? () => _deleteMessage(docs[index].id)
-                          : null,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Row(
-                          mainAxisAlignment: isMe
-                              ? MainAxisAlignment.end
-                              : MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (!isMe) ...[
-                              CircleAvatar(
-                                radius: 16,
-                                backgroundColor: const Color(0xFFE0E7FF),
-                                child: Text(
-                                  displaySenderName
-                                      .substring(0, 1)
-                                      .toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Color(0xFF4F46E5),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: isMe
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                                children: [
-                                  if (!isMe)
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        left: 4,
-                                        bottom: 4,
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              displaySenderName,
-                                              style: TextStyle(
-                                                color: Colors.grey.shade700,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (isMessageOwner)
-                                            Container(
-                                              margin: const EdgeInsets.only(
-                                                left: 6,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                    vertical: 1,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green.shade50,
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: const Text(
-                                                'Kurucu',
-                                                style: TextStyle(
-                                                  color: Colors.green,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  Container(
-                                    padding: EdgeInsets.all(
-                                      base64Data != null && isImage ? 4 : 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isMe
-                                          ? const Color(0xFF4F46E5)
-                                          : Colors.white,
-                                      borderRadius: BorderRadius.circular(18)
-                                          .copyWith(
-                                            bottomRight: isMe
-                                                ? const Radius.circular(4)
-                                                : const Radius.circular(18),
-                                            bottomLeft: !isMe
-                                                ? const Radius.circular(4)
-                                                : const Radius.circular(18),
-                                          ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.04),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                      border: isMe
-                                          ? null
-                                          : Border.all(
-                                              color: Colors.grey.shade200,
-                                            ),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: isMe
-                                          ? CrossAxisAlignment.end
-                                          : CrossAxisAlignment.start,
-                                      children: [
-                                        // İNDİRİLEBİLİR DOSYA/RESİM (NORMAL MESAJ)
-                                        if (base64Data != null)
-                                          isImage
-                                              ? Stack(
-                                                  alignment:
-                                                      Alignment.bottomRight,
-                                                  children: [
-                                                    ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            14,
-                                                          ),
-                                                      child: Image.memory(
-                                                        base64Decode(
-                                                          base64Data,
-                                                        ),
-                                                        width: 200,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    ),
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            6.0,
-                                                          ),
-                                                      child: InkWell(
-                                                        onTap: () =>
-                                                            _downloadFile(
-                                                              base64Data,
-                                                              fileName ??
-                                                                  'resim.png',
-                                                            ),
-                                                        child: Container(
-                                                          padding:
-                                                              const EdgeInsets.all(
-                                                                6,
-                                                              ),
-                                                          decoration:
-                                                              const BoxDecoration(
-                                                                color: Colors
-                                                                    .black54,
-                                                                shape: BoxShape
-                                                                    .circle,
-                                                              ),
-                                                          child: const Icon(
-                                                            Icons.download,
-                                                            color: Colors.white,
-                                                            size: 18,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                )
-                                              : InkWell(
-                                                  onTap: () => _downloadFile(
-                                                    base64Data,
-                                                    fileName ?? 'dosya',
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                          12,
-                                                        ),
-                                                    margin:
-                                                        const EdgeInsets.only(
-                                                          bottom: 8,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: isMe
-                                                          ? Colors.white
-                                                                .withOpacity(
-                                                                  0.2,
-                                                                )
-                                                          : Colors
-                                                                .grey
-                                                                .shade100,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons
-                                                              .insert_drive_file,
-                                                          color: isMe
-                                                              ? Colors.white
-                                                              : const Color(
-                                                                  0xFF4F46E5,
-                                                                ),
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Flexible(
-                                                          child: Text(
-                                                            fileName ?? 'Dosya',
-                                                            style: TextStyle(
-                                                              color: isMe
-                                                                  ? Colors.white
-                                                                  : const Color(
-                                                                      0xFF4F46E5,
-                                                                    ),
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                            ),
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Icon(
-                                                          Icons
-                                                              .download_rounded,
-                                                          color: isMe
-                                                              ? Colors.white
-                                                              : const Color(
-                                                                  0xFF4F46E5,
-                                                                ),
-                                                          size: 20,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-
-                                        if (data['text'] != null &&
-                                            data['text'].toString().isNotEmpty)
-                                          Padding(
-                                            padding: EdgeInsets.only(
-                                              top: base64Data != null ? 8 : 0,
-                                              left:
-                                                  base64Data != null && isImage
-                                                  ? 8
-                                                  : 0,
-                                              right:
-                                                  base64Data != null && isImage
-                                                  ? 8
-                                                  : 0,
-                                            ),
-                                            child: Text(
-                                              data['text'],
-                                              style: TextStyle(
-                                                color: isMe
-                                                    ? Colors.white
-                                                    : const Color(0xFF1F2937),
-                                                fontSize: 15,
-                                                height: 1.3,
-                                              ),
-                                            ),
-                                          ),
-
-                                        Padding(
-                                          padding: EdgeInsets.only(
-                                            top: 4,
-                                            right: base64Data != null && isImage
-                                                ? 8
-                                                : 0,
-                                          ),
-                                          child: Text(
-                                            timeStr,
-                                            style: TextStyle(
-                                              color: isMe
-                                                  ? Colors.indigo.shade200
-                                                  : Colors.grey.shade400,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isMe) const SizedBox(width: 24),
-                          ],
-                        ),
-                      ),
+                    return _buildMessageBubble(
+                      docs[i].id, data, isMe, senderName, timeStr,
+                      isOwnerMsg, base64, fname, isImg, canDelete,
                     );
                   },
                 );
@@ -1034,293 +677,58 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          if (canType)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
+          // ─── يكتب الآن ────────────────────────────────────────────────
+          StreamBuilder<DocumentSnapshot>(
+            stream: _firestore.collection('typing').doc(widget.channelId).snapshots(),
+            builder: (ctx, snap) {
+              if (!snap.hasData || !snap.data!.exists) return const SizedBox();
+              final data = snap.data!.data() as Map<String, dynamic>? ?? {};
+              final myUid = _auth.currentUser?.uid ?? '';
+              final others = data.entries.where((e) => e.key != myUid).toList();
+              if (others.isEmpty) return const SizedBox();
+              final names = others.map((e) {
+                final v = e.value;
+                return v is Map ? (v['name'] ?? 'Biri') : 'Biri';
+              }).join(', ');
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, -4),
-                  ),
-                ],
-                border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    if (widget.isOwner)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              GestureDetector(
-                                onTap: () => setState(() {
-                                  _isAnnouncement = false;
-                                  _titleController.clear();
-                                }),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: !_isAnnouncement
-                                        ? Colors.white
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: !_isAnnouncement
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.05,
-                                              ),
-                                              blurRadius: 4,
-                                            ),
-                                          ]
-                                        : [],
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: 16,
-                                        color: !_isAnnouncement
-                                            ? const Color(0xFF4F46E5)
-                                            : Colors.grey.shade600,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Gönderi',
-                                        style: TextStyle(
-                                          color: !_isAnnouncement
-                                              ? const Color(0xFF4F46E5)
-                                              : Colors.grey.shade600,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () =>
-                                    setState(() => _isAnnouncement = true),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _isAnnouncement
-                                        ? Colors.white
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: _isAnnouncement
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(
-                                                0.05,
-                                              ),
-                                              blurRadius: 4,
-                                            ),
-                                          ]
-                                        : [],
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.campaign,
-                                        size: 16,
-                                        color: _isAnnouncement
-                                            ? Colors.orange
-                                            : Colors.grey.shade600,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Duyuru',
-                                        style: TextStyle(
-                                          color: _isAnnouncement
-                                              ? Colors.orange
-                                              : Colors.grey.shade600,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    _TypingDots(),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$names yazıyor...',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
                       ),
-
-                    if (_isAnnouncement && widget.isOwner)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: TextField(
-                          controller: _titleController,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1F2937),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Duyuru Başlığı Ekleyin...',
-                            hintStyle: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontWeight: FontWeight.normal,
-                            ),
-                            border: UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: Colors.grey.shade300,
-                              ),
-                            ),
-                            enabledBorder: UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: Colors.grey.shade300,
-                              ),
-                            ),
-                            focusedBorder: const UnderlineInputBorder(
-                              borderSide: BorderSide(
-                                color: Colors.orange,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.title,
-                              color: Colors.orange,
-                              size: 20,
-                            ),
-                            prefixIconConstraints: const BoxConstraints(
-                              minWidth: 40,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(right: 8, bottom: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: IconButton(
-                            icon: _isUploading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.attach_file,
-                                    color: Color(0xFF64748B),
-                                  ),
-                            onPressed: _isUploading ? null : _pickAndUploadFile,
-                            tooltip: 'Dosya veya Fotoğraf Yükle',
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: TextField(
-                              controller: _messageController,
-                              minLines: 1,
-                              maxLines: 4,
-                              decoration: InputDecoration(
-                                hintText: _isAnnouncement
-                                    ? 'Duyuru detaylarını yazın...'
-                                    : 'Mesaj yazın...',
-                                hintStyle: TextStyle(
-                                  color: Colors.grey.shade500,
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 2),
-                          decoration: BoxDecoration(
-                            color: _isAnnouncement
-                                ? Colors.orange
-                                : const Color(0xFF4F46E5),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    (_isAnnouncement
-                                            ? Colors.orange
-                                            : const Color(0xFF4F46E5))
-                                        .withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.send_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                            onPressed: () => _sendMessage(),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
-              ),
-            )
+              );
+            },
+          ),
+
+          if (canType)
+            _buildInputBar()
           else
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border(top: BorderSide(color: Colors.grey.shade300)),
-              ),
-              child: const SafeArea(
+              padding: const EdgeInsets.all(16),
+              color: Colors.grey.shade100,
+              child: SafeArea(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.lock_outline, color: Colors.grey, size: 18),
-                    SizedBox(width: 8),
+                    const Icon(Icons.lock_outline,
+                        color: Colors.grey, size: 16),
+                    const SizedBox(width: 8),
                     Text(
-                      'Bu kanala sadece yöneticiler mesaj gönderebilir.',
+                      'Sadece yöneticiler mesaj atabilir',
                       style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -1328,6 +736,770 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // ─── DUYURU KARTI ─────────────────────────────────────────────────────────────
+  Widget _buildAnnouncementCard(
+    String docId, Map data, String sender, String time,
+    bool isOwnerMsg, String? base64, String? fname,
+    bool isImg, bool canDelete,
+  ) {
+    return GestureDetector(
+      onLongPress: () => _showMessageOptions(docId, data, data['senderId'] == _auth.currentUser?.uid),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(width: 5, color: const Color(0xFF6366F1)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.campaign,
+                                  color: Colors.orange, size: 18),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                data['title'] ?? 'ÖNEMLİ DUYURU',
+                                style: const TextStyle(
+                                  color: Color(0xFF1F2937),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 10),
+                          child: Divider(height: 1),
+                        ),
+                        if (base64 != null)
+                          _buildFileWidget(base64, fname, isImg, false),
+                        if ((data['text'] ?? '').toString().isNotEmpty)
+                          Text(
+                            data['text'],
+                            style: const TextStyle(
+                              color: Color(0xFF4B5563),
+                              fontSize: 14,
+                              height: 1.5,
+                            ),
+                          ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 11,
+                              backgroundColor: const Color(0xFFEEF2FF),
+                              child: Text(
+                                sender[0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFF4F46E5),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                sender,
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isOwnerMsg)
+                              Container(
+                                margin: const EdgeInsets.only(left: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'Kurucu',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            Text(
+                              time,
+                              style: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (data['reactions'] != null)
+                          _buildReactions(Map<String, dynamic>.from(data['reactions']), docId),
+                        if (data['edited'] == true)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '(düzenlendi)',
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── MESAJ BALONCUĞU ──────────────────────────────────────────────────────────
+  Widget _buildMessageBubble(
+    String docId, Map data, bool isMe, String sender, String time,
+    bool isOwnerMsg, String? base64, String? fname,
+    bool isImg, bool canDelete,
+  ) {
+    return GestureDetector(
+      onLongPress: () => _showMessageOptions(docId, data, isMe),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          mainAxisAlignment:
+              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isMe) ...[
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: const Color(0xFFE0E7FF),
+                child: Text(
+                  sender[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xFF4F46E5),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment: isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  if (!isMe)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              sender,
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isOwnerMsg)
+                            Container(
+                              margin: const EdgeInsets.only(left: 5),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Kurucu',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  Container(
+                    padding: EdgeInsets.all(
+                        base64 != null && isImg ? 4 : 12),
+                    decoration: BoxDecoration(
+                      color: isMe
+                          ? const Color(0xFF4F46E5)
+                          : Colors.white,
+                      borderRadius:
+                          BorderRadius.circular(16).copyWith(
+                        bottomRight: isMe
+                            ? const Radius.circular(4)
+                            : const Radius.circular(16),
+                        bottomLeft: !isMe
+                            ? const Radius.circular(4)
+                            : const Radius.circular(16),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 4,
+                        ),
+                      ],
+                      border: isMe
+                          ? null
+                          : Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: isMe
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        // Reply gösteri
+                        if (data['replyTo'] != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(8),
+                              border: const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  data['replyTo']['senderName'] ?? '',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
+                                Text(
+                                  data['replyTo']['text'] ?? '',
+                                  style: const TextStyle(fontSize: 11),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                        if (base64 != null)
+                          _buildFileWidget(base64, fname, isImg, isMe),
+                        if ((data['text'] ?? '').toString().isNotEmpty)
+                          Padding(
+                            padding:
+                                EdgeInsets.only(top: base64 != null ? 6 : 0),
+                            child: Text(
+                              data['text'],
+                              style: TextStyle(
+                                color: isMe
+                                    ? Colors.white
+                                    : const Color(0xFF1F2937),
+                                fontSize: 14,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            time,
+                            style: TextStyle(
+                              color: isMe
+                                  ? Colors.indigo.shade200
+                                  : Colors.grey.shade400,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Reactions
+                  if (data['reactions'] != null)
+                    _buildReactions(
+                      Map<String, dynamic>.from(data['reactions']),
+                      docId,
+                    ),
+                  // Edited işareti
+                  if (data['edited'] == true)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '(düzenlendi)',
+                        style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (isMe) const SizedBox(width: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── DOSYA/RESİM WİDGET — WEB UYUMLU ─────────────────────────────────────────
+  Widget _buildFileWidget(
+      String base64, String? fname, bool isImg, bool isMe) {
+    if (isImg) {
+      return Stack(
+        alignment: Alignment.bottomRight,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              base64Decode(base64),
+              width: 200,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(6),
+            child: GestureDetector(
+              onTap: () => _downloadFile(base64, fname),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.download,
+                    color: Colors.white, size: 16),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => _downloadFile(base64, fname ?? 'dosya'),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: isMe
+              ? Colors.white.withOpacity(0.2)
+              : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.insert_drive_file,
+              color: isMe ? Colors.white : const Color(0xFF4F46E5),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                fname ?? 'Dosya',
+                style: TextStyle(
+                  color: isMe ? Colors.white : const Color(0xFF4F46E5),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.download_rounded,
+              color: isMe ? Colors.white : const Color(0xFF4F46E5),
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildReactions(Map<String, dynamic>? reactions, String docId) {
+    if (reactions == null || reactions.isEmpty) return const SizedBox();
+    final myUid = _auth.currentUser?.uid ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 4,
+        children: reactions.entries.map((e) {
+          final List users = e.value as List;
+          if (users.isEmpty) return const SizedBox();
+          final bool iReacted = users.contains(myUid);
+          return GestureDetector(
+            onTap: () => iReacted
+                ? _removeReaction(docId, e.key)
+                : _addReaction(docId, e.key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: iReacted
+                    ? const Color(0xFFEEF2FF)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: iReacted
+                      ? const Color(0xFF4F46E5)
+                      : Colors.grey.shade200,
+                ),
+              ),
+              child: Text(
+                '${e.key} ${users.length}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ─── GİRİŞ ÇUBUĞU ─────────────────────────────────────────────────────────────
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, -3),
+          ),
+        ],
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ─── Reply şeridi ─────────────────────────────────────────────
+            if (_replyingTo != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 3)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _replyingTo!['senderName'] ?? '',
+                            style: const TextStyle(
+                              color: Color(0xFF4F46E5),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            _replyingTo!['text'] ?? '',
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _replyingTo = null),
+                      child: const Icon(Icons.close, size: 18, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (widget.isOwner)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _toggleBtn('💬 Gönderi', !_isAnnouncement, () {
+                        setState(() {
+                          _isAnnouncement = false;
+                          _titleController.clear();
+                        });
+                      }),
+                      _toggleBtn('📢 Duyuru', _isAnnouncement, () {
+                        setState(() => _isAnnouncement = true);
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+
+            if (_isAnnouncement && widget.isOwner)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _titleController,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Color(0xFF1F2937),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Duyuru başlığı...',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontWeight: FontWeight.normal,
+                    ),
+                    prefixIcon: const Icon(Icons.title,
+                        color: Colors.orange, size: 18),
+                    border: const UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.orange),
+                    ),
+                    focusedBorder: const UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Colors.orange, width: 2),
+                    ),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 8),
+                    prefixIconConstraints:
+                        const BoxConstraints(minWidth: 36),
+                  ),
+                ),
+              ),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: _isUploading ? null : _pickFile,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    margin:
+                        const EdgeInsets.only(right: 8, bottom: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                      border:
+                          Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: _isUploading
+                        ? const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF4F46E5),
+                            ),
+                          )
+                        : const Icon(Icons.attach_file,
+                            color: Color(0xFF64748B), size: 20),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(22),
+                      border:
+                          Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: TextField(
+                      controller: _messageController,
+                      focusNode: _messageFocus,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.send,
+                      onChanged: (_) => _onTyping(),
+                      onSubmitted: (_) => _sendMessage(),
+                      decoration: InputDecoration(
+                        hintText: _isAnnouncement
+                            ? 'Duyuru içeriği...'
+                            : 'Mesaj yaz...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _sendMessage(),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    margin: const EdgeInsets.only(bottom: 1),
+                    decoration: BoxDecoration(
+                      color: _isAnnouncement
+                          ? Colors.orange
+                          : const Color(0xFF4F46E5),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_isAnnouncement
+                                  ? Colors.orange
+                                  : const Color(0xFF4F46E5))
+                              .withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 52),
+              child: Text(
+                'Maks. 700 KB',
+                style: TextStyle(
+                    fontSize: 10, color: Colors.grey.shade400),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toggleBtn(
+      String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 4,
+                  ),
+                ]
+              : [],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active
+                ? (_isAnnouncement && active
+                    ? Colors.orange
+                    : const Color(0xFF4F46E5))
+                : Colors.grey.shade500,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TypingDots extends StatefulWidget {
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _anim,
+      child: Row(
+        children: List.generate(3, (i) => Container(
+          width: 6, height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade400,
+            shape: BoxShape.circle,
+          ),
+        )),
       ),
     );
   }
