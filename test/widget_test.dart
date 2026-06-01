@@ -5,7 +5,7 @@ import 'package:yazilimmuhendislgiproje/main.dart';
 
 void main() {
   testWidgets('Uygulama basariyla basliyor mu testi', (WidgetTester tester) async {
-    await tester.pumpWidget(const DuyuruApp());
+    await tester.pumpWidget(const OdakSinifApp());
     expect(find.text('Duyuru Sistemi'), findsWidgets);
   });
 }

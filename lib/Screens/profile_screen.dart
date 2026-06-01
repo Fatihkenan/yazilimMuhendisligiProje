@@ -1,3 +1,8 @@
+// ignore_for_file: curly_braces_in_flow_control_structures, deprecated_member_use, use_build_context_synchronously, unused_import
+
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart' as fp;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,136 +19,154 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _firstNameCtrl = TextEditingController();
+  final TextEditingController _lastNameCtrl = TextEditingController();
+  final TextEditingController _bioCtrl = TextEditingController();
 
-  String _email = "";
+  String _email = '';
   bool _isLoading = true;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchUserData();
+    _loadData();
   }
 
-  // --- FİREBASE'DEN KULLANICI BİLGİLERİNİ ÇEKME ---
-  Future<void> _fetchUserData() async {
-    final User? user = _auth.currentUser;
-    if (user != null) {
-      _email = user.email ?? "Bilinmiyor";
-      try {
-        final DocumentSnapshot userDoc = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .get();
+  @override
+  void dispose() {
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    _bioCtrl.dispose();
+    super.dispose();
+  }
 
-        if (userDoc.exists) {
-          final data = userDoc.data() as Map<String, dynamic>;
-          setState(() {
-            _firstNameController.text = data['firstName'] ?? "";
-            _lastNameController.text = data['lastName'] ?? "";
-          });
-        }
-      } catch (e) {
-        debugPrint("Profil çekme hatası: $e");
+  Future<void> _loadData() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    _email = user.email ?? '';
+    try {
+      final doc = await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final d = doc.data() as Map<String, dynamic>;
+        _firstNameCtrl.text = d['firstName'] ?? '';
+        _lastNameCtrl.text = d['lastName'] ?? '';
+        _bioCtrl.text = d['bio'] ?? '';
       }
-    }
+    } catch (_) {}
     setState(() => _isLoading = false);
   }
 
-  // --- PROFİLİ KAYDETME İŞLEMİ ---
-  Future<void> _saveProfile() async {
-    if (_firstNameController.text.trim().isEmpty) {
+  Future<void> _pickProfilePhoto() async {
+    final result = await fp.FilePicker.platform.pickFiles(
+      type: fp.FileType.image,
+      withData: true,
+    );
+
+    if (result == null || result.files.first.bytes == null) return;
+
+    final bytes = result.files.first.bytes!;
+
+    if (bytes.lengthInBytes > 200 * 1024) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Lütfen adınızı girin!'),
+          content: Text('Fotoğraf 200 KB altında olmalı!'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
+    final base64 = base64Encode(bytes);
+
+    await _firestore.collection('users').doc(_auth.currentUser!.uid).update({
+      'photoBase64': base64,
+    });
+    setState(() {});
+  }
+
+  Future<void> _save() async {
+    if (_firstNameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ad alanı boş bırakılamaz!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
-    final User? user = _auth.currentUser;
+    final user = _auth.currentUser!;
+    final fn = _firstNameCtrl.text.trim();
+    final ln = _lastNameCtrl.text.trim();
+    final full = '$fn $ln'.trim();
 
-    if (user != null) {
-      try {
-        String firstName = _firstNameController.text.trim();
-        String lastName = _lastNameController.text.trim();
-        String fullName = '$firstName $lastName'.trim();
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'firstName': fn,
+        'lastName': ln,
+        'fullName': full,
+        'name': full,
+        'adSoyad': full,
+        'bio': _bioCtrl.text.trim(),
+        'email': _email.toLowerCase(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-        // Veritabanına kullanıcının adını kaydet (Chat ekranı buradan okuyacak)
-        await _firestore.collection('users').doc(user.uid).set({
-          'firstName': firstName,
-          'lastName': lastName,
-          'name': fullName, // Chat ekranı uyumluluğu için
-          'email': user.email,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+      await user.updateDisplayName(full);
 
-        // Firebase Auth profilini de güncelle
-        await user.updateDisplayName(fullName);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profil başarıyla güncellendi!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          FocusScope.of(context).unfocus(); // Klavyeyi kapat
-        }
-      } catch (e) {
-        if (mounted)
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Hata: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profil güncellendi ✅'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        FocusScope.of(context).unfocus();
       }
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e')),
+        );
     }
     setState(() => _isSaving = false);
   }
 
-  // --- ÇIKIŞ YAPMA İŞLEMİ ---
-  void _showLogoutDialog(BuildContext context) {
+  void _logout() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Çıkış Yap',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
         ),
-        content: const Text(
-          'Hesabınızdan çıkış yapmak istediğinize emin misiniz?',
-        ),
+        content: const Text('Hesabınızdan çıkış yapmak istiyor musunuz?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'İptal',
-              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            onPressed: () async {
-              await _auth.signOut();
-              if (!context.mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-                (route) => false,
-              );
-            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
+            onPressed: () async {
+              await _auth.signOut();
+              if (!context.mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                (r) => false,
+              );
+            },
             child: const Text(
               'Çıkış Yap',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -151,22 +174,89 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    super.dispose();
+  // ─── دالة حذف الحساب ──────────────────────────────────────────
+  void _deleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Hesabı Sil',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+        ),
+        content: const Text(
+          'Hesabınızı ve tüm verilerinizi kalıcı olarak silmek istediğinize emin misiniz? Bu işlem kesinlikle geri alınamaz.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx); // إغلاق نافذة التأكيد
+              await _performAccountDeletion();
+            },
+            child: const Text(
+              'Sil',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performAccountDeletion() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        // حذف بيانات المستخدم من Firestore
+        await _firestore.collection('users').doc(user.uid).delete();
+        
+        // حذف الحساب من Firebase Auth
+        await user.delete();
+
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          (r) => false,
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        // فايربيز يطلب تسجيل الدخول مؤخراً لحذف الحساب لأسباب أمنية
+        if (e.toString().contains('requires-recent-login')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Güvenlik nedeniyle hesabınızı silebilmek için uygulamadan çıkış yapıp tekrar giriş yapmanız gerekmektedir.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Hata: $e')),
+          );
+        }
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // İsim baş harfini bul (Avatar için)
-    String initial = "U";
-    if (_firstNameController.text.isNotEmpty) {
-      initial = _firstNameController.text[0].toUpperCase();
-    } else if (_email.isNotEmpty) {
-      initial = _email[0].toUpperCase();
-    }
+    final String firstName = _firstNameCtrl.text;
+    final String initial =
+        firstName.isNotEmpty ? firstName[0].toUpperCase() : _email.isNotEmpty ? _email[0].toUpperCase() : 'U';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -177,8 +267,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text(
           'Profil & Ayarlar',
           style: TextStyle(
-            color: Color(0xFF1F2937),
             fontWeight: FontWeight.bold,
+            color: Color(0xFF1F2937),
           ),
         ),
       ),
@@ -190,7 +280,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               physics: const BouncingScrollPhysics(),
               child: Column(
                 children: [
-                  // --- ÜST BÖLÜM (AVATAR) ---
+                  // ── Avatar Bölümü ────────────────────────────────────────────
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 32),
@@ -202,43 +292,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Column(
                       children: [
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEEF2FF), Color(0xFFC7D2FE)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 4),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                        FutureBuilder<DocumentSnapshot>(
+                          future: _firestore.collection('users').doc(_auth.currentUser!.uid).get(),
+                          builder: (ctx, snap) {
+                            final photo = (snap.data?.data() as Map<String, dynamic>?)?['photoBase64'];
+                            return GestureDetector(
+                              onTap: _pickProfilePhoto,
+                              child: Stack(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 45,
+                                    backgroundColor: const Color(0xFF4F46E5),
+                                    backgroundImage: photo != null
+                                        ? MemoryImage(base64Decode(photo)) : null,
+                                    child: photo == null
+                                        ? Text(initial, style: const TextStyle(
+                                            color: Colors.white, fontSize: 38, fontWeight: FontWeight.bold))
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    bottom: 0, right: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF4F46E5),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              initial,
-                              style: const TextStyle(
-                                color: Color(0xFF4F46E5),
-                                fontSize: 40,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                         Text(
-                          _firstNameController.text.isNotEmpty
-                              ? '${_firstNameController.text} ${_lastNameController.text}'
-                              : 'İsimsiz Kullanıcı',
+                          '${_firstNameCtrl.text} ${_lastNameCtrl.text}'.trim().isEmpty
+                              ? 'İsimsiz Kullanıcı'
+                              : '${_firstNameCtrl.text} ${_lastNameCtrl.text}'.trim(),
                           style: const TextStyle(
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF1F2937),
                           ),
@@ -258,7 +352,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             style: TextStyle(
                               color: Colors.grey.shade600,
                               fontSize: 13,
-                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
@@ -266,86 +359,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
 
-                  // --- ALT BÖLÜM (FORMLAR VE AYARLAR) ---
                   Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'KİŞİSEL BİLGİLER',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                            letterSpacing: 1.2,
-                          ),
+                        // ── Kişisel Bilgiler ────────────────────────────────
+                        _sectionTitle('KİŞİSEL BİLGİLER'),
+                        const SizedBox(height: 10),
+                        _card(
+                          children: [
+                            _profileField(
+                              _firstNameCtrl,
+                              'Adınız',
+                              Icons.person_outline,
+                            ),
+                            _divider(),
+                            _profileField(
+                              _lastNameCtrl,
+                              'Soyadınız',
+                              Icons.badge_outlined,
+                            ),
+                            _divider(),
+                            _profileField(
+                              _bioCtrl,
+                              'Biyografi',
+                              Icons.info_outline,
+                              maxLines: 2,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
 
-                        // İsim Formu
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Column(
-                            children: [
-                              TextField(
-                                controller: _firstNameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Adınız',
-                                  prefixIcon: Icon(
-                                    Icons.person_outline,
-                                    color: Color(0xFF4F46E5),
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                              Divider(height: 1, color: Colors.grey.shade200),
-                              TextField(
-                                controller: _lastNameController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Soyadınız',
-                                  prefixIcon: Icon(
-                                    Icons.badge_outlined,
-                                    color: Color(0xFF4F46E5),
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Kaydet Butonu
+                        // Kaydet butonu
                         SizedBox(
                           width: double.infinity,
-                          height: 52,
+                          height: 50,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF4F46E5),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                              elevation: 2,
+                              elevation: 0,
                             ),
-                            onPressed: _isSaving ? null : _saveProfile,
+                            onPressed: _isSaving ? null : _save,
                             child: _isSaving
                                 ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
+                                    width: 22,
+                                    height: 22,
                                     child: CircularProgressIndicator(
                                       color: Colors.white,
                                       strokeWidth: 2,
@@ -355,61 +417,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     'Değişiklikleri Kaydet',
                                     style: TextStyle(
                                       color: Colors.white,
-                                      fontSize: 16,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                           ),
                         ),
 
-                        const SizedBox(height: 40),
-                        const Text(
-                          'HESAP YÖNETİMİ',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 32),
 
-                        // Çıkış Yap Butonu
-                        InkWell(
-                          onTap: () => _showLogoutDialog(context),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
+                        // ── Hesap Yönetimi ──────────────────────────────────
+                        _sectionTitle('HESAP YÖNETİMİ'),
+                        const SizedBox(height: 10),
+
+                        // Uygulama hakkında
+                        _card(
+                          children: [
+                            _actionTile(
+                              icon: Icons.info_outline,
+                              color: const Color(0xFF4F46E5),
+                              title: 'Uygulama Hakkında',
+                              subtitle: 'Odaksınıf v2.0 — Teams Edition',
+                              onTap: () {
+                                showAboutDialog(
+                                  context: context,
+                                  applicationName: 'Odaksınıf',
+                                  applicationVersion: 'v2.0',
+                                  applicationLegalese:
+                                      'Teams-Inspired Edition\n© 2025 Odaksınıf',
+                                );
+                              },
                             ),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.red.shade100),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.logout, color: Colors.red),
-                                SizedBox(width: 12),
-                                Text(
-                                  'Hesaptan Çıkış Yap',
-                                  style: TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                Spacer(),
-                                Icon(
-                                  Icons.arrow_forward_ios,
-                                  color: Colors.red,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
+                          ],
                         ),
+                        const SizedBox(height: 10),
+
+                        // Çıkış Yap
+                        _card(
+                          children: [
+                            _actionTile(
+                              icon: Icons.logout,
+                              color: Colors.orange,
+                              title: 'Hesaptan Çıkış Yap',
+                              subtitle: 'Güvenli çıkış',
+                              onTap: _logout,
+                              isDanger: false, // غيرناها للبرتقالي لأن الحذف سيكون الأحمر
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // ─── خيار حذف الحساب الجديد ───
+                        _card(
+                          children: [
+                            _actionTile(
+                              icon: Icons.person_remove_rounded,
+                              color: Colors.red,
+                              title: 'Hesabı Sil',
+                              subtitle: 'Hesabı ve verileri kalıcı olarak sil',
+                              onTap: _deleteAccount,
+                              isDanger: true,
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 40),
                       ],
                     ),
                   ),
@@ -418,4 +490,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
     );
   }
+
+  Widget _sectionTitle(String t) => Text(
+    t,
+    style: const TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.bold,
+      color: Colors.grey,
+      letterSpacing: 1.2,
+    ),
+  );
+
+  Widget _card({required List<Widget> children}) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Colors.grey.shade100),
+    ),
+    child: Column(children: children),
+  );
+
+  Widget _divider() => Divider(
+    height: 1,
+    color: Colors.grey.shade100,
+    indent: 52,
+  );
+
+  Widget _profileField(
+    TextEditingController ctrl,
+    String label,
+    IconData icon, {
+    int maxLines = 1,
+  }) =>
+      TextField(
+        controller: ctrl,
+        maxLines: maxLines,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: const Color(0xFF4F46E5), size: 20),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
+      );
+
+  Widget _actionTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) =>
+      ListTile(
+        onTap: onTap,
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: isDanger ? Colors.red : const Color(0xFF1F2937),
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+        trailing: Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.grey.shade300,
+          size: 14,
+        ),
+      );
 }

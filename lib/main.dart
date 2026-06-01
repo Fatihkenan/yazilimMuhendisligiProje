@@ -8,30 +8,63 @@ import 'screens/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const DuyuruApp());
+  runApp(const OdakSinifApp());
 }
 
-class DuyuruApp extends StatelessWidget {
-  const DuyuruApp({super.key});
+class OdakSinifApp extends StatelessWidget {
+  const OdakSinifApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Odaksınıf',
-      debugShowCheckedModeBanner: false, // Sağ üstteki kırmızı etiketi kaldırır
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5), // Teams Konsepti İndigo Rengi
+          seedColor: const Color(0xFF4F46E5),
           brightness: Brightness.light,
         ),
         fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          scrolledUnderElevation: 1,
+          backgroundColor: Colors.white,
+          foregroundColor: Color(0xFF1F2937),
+          titleTextStyle: TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF4F46E5),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ),
-      // --- OTOMATİK GİRİŞ KONTROLÜ (AUTH STATE) ---
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          // 1. Durum: Firebase ile bağlantı kuruluyor
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               backgroundColor: Color(0xFFF8FAFC),
@@ -40,13 +73,9 @@ class DuyuruApp extends StatelessWidget {
               ),
             );
           }
-
-          // 2. Durum: Kullanıcı oturumu açık, direkt Ana Ekrana gönder
           if (snapshot.hasData) {
             return const HomeScreen();
           }
-
-          // 3. Durum: Oturum kapalı, Karşılama/Giriş Ekranına gönder
           return const WelcomeScreen();
         },
       ),
