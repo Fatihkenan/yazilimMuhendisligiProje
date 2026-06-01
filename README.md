@@ -20,7 +20,6 @@ OdakSınıf, butik dershaneler ve özel eğitim kurumları için tasarlanmış, 
 
 ## 📦 Kurulum ve Canlı Test
 
-> **⚠️ Önemli Not:** Projenin derlenmiş test edilebilir `app-release.apk` dosyası teslim tarihinden önce bu ana dizine eklenecektir.
 
 Projeyi yerel geliştirme ortamınızda (Localhost) çalıştırmak için aşağıdaki adımları izleyebilirsiniz:
 
