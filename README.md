@@ -24,7 +24,7 @@ OdakSınıf, butik dershaneler ve özel eğitim kurumları için tasarlanmış, 
 Projeyi yerel geliştirme ortamınızda (Localhost) çalıştırmak için aşağıdaki adımları izleyebilirsiniz:
 
 1. Repoyu bilgisayarınıza klonlayın:
-`git clone https://github.com/Fatihkenan/yazilimMuhendisligiProje`
+`git clone https://github.com/Fatihkenan/yazilimMuhendisligiProje.git`
 
 2. Gerekli Flutter paketlerini indirin:
 `flutter pub get`
