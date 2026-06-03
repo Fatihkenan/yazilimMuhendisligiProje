@@ -2,15 +2,16 @@
 
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart' as fp;
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
+import 'package:url_launcher/url_launcher.dart'; // نبقيه للويب فقط
 
-// Web için dart:html import
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 
 class ChatScreen extends StatefulWidget {
   final String channelId;
@@ -44,10 +45,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isUploading = false;
 
   // ─── ميزات جديدة ─────────────────────────────────────────────
-  Map<String, dynamic>? _replyingTo;   // Reply
-  String? _editingDocId;               // تعديل الرسالة
-  bool _isSearching = false;           // بحث
-  String _searchQuery = '';            // بحث
+  Map<String, dynamic>? _replyingTo;
+  String? _editingDocId;
+  bool _isSearching = false;
+  String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
 
   // ─── DOSYA BOYUTU SINIRI: 700 KB
@@ -119,41 +120,65 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ─── DOSYA İNDİR — WEB UYUMLU ────────────────────────────────────────────────
-  void _downloadFile(String base64Data, String? fileName) {
-    try {
-      if (kIsWeb) {
-        final String ext = (fileName ?? 'dosya').split('.').last.toLowerCase();
-        String mimeType = 'application/octet-stream';
-        if (ext == 'pdf') mimeType = 'application/pdf';
-        else if (ext == 'png') mimeType = 'image/png';
-        else if (['jpg', 'jpeg'].contains(ext)) mimeType = 'image/jpeg';
-        else if (ext == 'webp') mimeType = 'image/webp';
-        else if (ext == 'gif') mimeType = 'image/gif';
-        else if (['doc', 'docx'].contains(ext)) mimeType = 'application/msword';
-        else if (ext == 'txt') mimeType = 'text/plain';
+  // ─── DOSYA İNDİR — Web + Android + iOS ───────────────────────
+  Future<void> _downloadFile(String base64Data, String? fileName) async {
+  try {
+    final String fName = fileName ?? 'dosya';
+    final Uint8List bytes = base64Decode(base64Data);
 
-        final bytes = base64Decode(base64Data);
-        final blob = html.Blob([bytes], mimeType);
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
-          ..setAttribute('download', fileName ?? 'dosya')
-          ..click();
-        html.Url.revokeObjectUrl(url);
+    // ─── ويب ───────────────────────────────────────────
+    if (kIsWeb) {
+      final String ext = fName.split('.').last.toLowerCase();
+      String mimeType = 'application/octet-stream';
+      if (ext == 'pdf')                         mimeType = 'application/pdf';
+      else if (ext == 'png')                    mimeType = 'image/png';
+      else if (['jpg','jpeg'].contains(ext))    mimeType = 'image/jpeg';
+      else if (ext == 'webp')                   mimeType = 'image/webp';
+      else if (ext == 'gif')                    mimeType = 'image/gif';
+      else if (['doc','docx'].contains(ext))    mimeType = 'application/msword';
+      else if (ext == 'txt')                    mimeType = 'text/plain';
+
+      final uri = Uri.parse('data:$mimeType;base64,$base64Data');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('İndirme hatası: $e'),
-            backgroundColor: Colors.red,
+      return;
+    }
+
+    // ─── موبايل (Android & iOS) ────────────────────────
+    final Directory tempDir = await getTemporaryDirectory();
+    final String filePath = '${tempDir.path}/$fName';
+    final File file = File(filePath);
+    await file.writeAsBytes(bytes);
+
+    final OpenResult result = await OpenFile.open(filePath);
+
+    if (result.type != ResultType.done && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.type == ResultType.noAppToOpen
+                ? 'Bu dosya türünü açacak uygulama bulunamadı'
+                : 'Dosya açılamadı: ${result.message}',
           ),
-        );
-      }
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Hata: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
+}
 
-  // ─── DOSYA SEÇ & YÜKLE ───────────────────────────────────────────────────────
+  // ─── DOSYA SEÇ & YÜKLE ───────────────────────────────────────
   Future<void> _pickFile() async {
     try {
       final result = await fp.FilePicker.platform.pickFiles(
@@ -190,7 +215,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           );
         }
-        return; 
+        return;
       }
 
       setState(() => _isUploading = true);
@@ -209,15 +234,15 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ─── MESAJ GÖNDER ─────────────────────────────────────────────────────────────
+  // ─── MESAJ GÖNDER ────────────────────────────────────────────
   Future<void> _sendMessage({String? base64Data, String? fileName}) async {
     final text = _messageController.text.trim();
     if (text.isEmpty && base64Data == null) {
       if (mounted) setState(() => _isUploading = false);
       return;
     }
-    
-    // ── تعديل رسالة موجودة ──────────────────────────────────────
+
+    // تعديل رسالة موجودة
     if (_editingDocId != null) {
       await _firestore.collection('messages').doc(_editingDocId).update({
         'text': text,
@@ -227,7 +252,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messageController.clear();
       return;
     }
-    
+
     if (_isAnnouncement && widget.isOwner && _titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Duyuru için başlık gerekli!'), backgroundColor: Colors.orange),
@@ -235,10 +260,10 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) setState(() => _isUploading = false);
       return;
     }
-    
+
     final user = _auth.currentUser;
     if (user == null) return;
-    
+
     try {
       await _firestore.collection('messages').add({
         'channelId': widget.channelId,
@@ -247,35 +272,34 @@ class _ChatScreenState extends State<ChatScreen> {
         'senderName': _currentUserName,
         'senderEmail': user.email,
         'type': _isAnnouncement && widget.isOwner ? 'announcement' : 'post',
-        'title': _isAnnouncement && widget.isOwner ? _titleController.text.trim().toUpperCase() : '',
+        'title': _isAnnouncement && widget.isOwner
+            ? _titleController.text.trim().toUpperCase() : '',
         'base64Data': base64Data,
         'fileName': fileName,
-        'replyTo': _replyingTo,   // ← Reply
+        'replyTo': _replyingTo,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // ── تحديث unreadBy لإظهار الشارة الحمراء للأعضاء الآخرين ─────────────────────
-      // ── تحديث الإشعارات للقنوات (تم إصلاح خطأ القائمة الثابتة) ──
-      final channelDoc = await _firestore.collection('channels').doc(widget.channelId).get();
+      // تحديث unreadBy للأعضاء الآخرين
+      final channelDoc = await _firestore
+          .collection('channels').doc(widget.channelId).get();
       final commId = channelDoc.data()?['communityId'];
       if (commId != null) {
-        final commDoc = await _firestore.collection('communities').doc(commId).get();
-        
-        // استخدام List.from ضروري جداً لتجنب خطأ القائمة غير القابلة للتعديل
-        final List<dynamic> members = List.from(commDoc.data()?['members'] ?? []);
-        members.remove(user.uid); // إزالة المرسل حتى لا يصله إشعار برسالته
-        
+        final commDoc = await _firestore
+            .collection('communities').doc(commId).get();
+        final List<dynamic> members =
+            List.from(commDoc.data()?['members'] ?? []);
+        members.remove(user.uid);
         await _firestore.collection('channels').doc(widget.channelId).update({
           'unreadBy': members,
         });
       }
-      // ────────────────────────────────────────────────────────
-      
-      // ── يكتب الآن — temizle ──────────────────────────────────
+
+      // يكتب الآن — temizle
       _firestore.collection('typing').doc(widget.channelId).update({
         user.uid: FieldValue.delete(),
       }).catchError((_) {});
-      
+
       _messageController.clear();
       _titleController.clear();
       if (mounted) setState(() {
@@ -285,13 +309,14 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e')));
         setState(() => _isUploading = false);
       }
     }
   }
 
-  // ─── يكتب الآن ────────────────────────────────────────────────
+  // ─── يكتب الآن ───────────────────────────────────────────────
   void _onTyping() {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -302,7 +327,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }, SetOptions(merge: true));
 
-    // 3 saniye sonra sil
     Future.delayed(const Duration(seconds: 3), () {
       _firestore.collection('typing').doc(widget.channelId).update({
         user.uid: FieldValue.delete(),
@@ -310,9 +334,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // ... باقي الكود (Reactions, Message Options, Build methods, etc.) كما هو بدون تغيير
-
-  // ─── Reactions ────────────────────────────────────────────────
+  // ─── Reactions ───────────────────────────────────────────────
   void _addReaction(String docId, String emoji) {
     final uid = _auth.currentUser?.uid ?? '';
     _firestore.collection('messages').doc(docId).update({
@@ -531,7 +553,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // ─── Sabitlenmiş mesaj banner ─────────────────────────────────
+          // ─── Sabitlenmiş mesaj banner ─────────────────────────
           StreamBuilder<QuerySnapshot>(
             stream: _firestore
                 .collection('messages')
@@ -544,19 +566,23 @@ class _ChatScreenState extends State<ChatScreen> {
               if (docs.isEmpty) return const SizedBox();
               final text = (docs.first.data() as Map)['text'] ?? '';
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.orange.shade50,
-                  border: Border(bottom: BorderSide(color: Colors.orange.shade200)),
+                  border: Border(
+                      bottom: BorderSide(color: Colors.orange.shade200)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.push_pin, color: Colors.orange, size: 16),
+                    const Icon(Icons.push_pin,
+                        color: Colors.orange, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         text,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -566,29 +592,35 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             },
           ),
-          
+
+          // ─── شريط البحث ──────────────────────────────────────
           if (_isSearching)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 8),
               color: Colors.white,
               child: TextField(
                 controller: _searchCtrl,
                 autofocus: true,
-                onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+                onChanged: (v) =>
+                    setState(() => _searchQuery = v.toLowerCase()),
                 decoration: InputDecoration(
                   hintText: 'Mesajlarda ara...',
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFF4F46E5)),
+                  prefixIcon: const Icon(Icons.search,
+                      color: Color(0xFF4F46E5)),
                   filled: true,
                   fillColor: const Color(0xFFF1F5F9),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
-            
+
+          // ─── الرسائل ─────────────────────────────────────────
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
@@ -601,15 +633,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   return const Center(child: Text('Bir hata oluştu.'));
                 if (snap.connectionState == ConnectionState.waiting)
                   return const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF4F46E5)),
+                    child: CircularProgressIndicator(
+                        color: Color(0xFF4F46E5)),
                   );
 
-                final docs = (snap.data?.docs ?? []).where((d) {
+                final docs =
+                    (snap.data?.docs ?? []).where((d) {
                   if (_searchQuery.isEmpty) return true;
-                  final text = (d.data() as Map)['text']?.toString().toLowerCase() ?? '';
+                  final text = (d.data() as Map)['text']
+                          ?.toString()
+                          .toLowerCase() ??
+                      '';
                   return text.contains(_searchQuery);
                 }).toList();
-                
+
                 if (docs.isEmpty) {
                   return Center(
                     child: Column(
@@ -627,7 +664,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           widget.isReadOnly
                               ? 'Henüz duyuru yok'
                               : 'Sohbeti başlatan ilk kişi ol!',
-                          style: TextStyle(color: Colors.grey.shade500),
+                          style:
+                              TextStyle(color: Colors.grey.shade500),
                         ),
                       ],
                     ),
@@ -642,24 +680,28 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   itemCount: docs.length,
                   itemBuilder: (ctx, i) {
-                    final data = docs[i].data() as Map<String, dynamic>;
+                    final data =
+                        docs[i].data() as Map<String, dynamic>;
                     final bool isMe =
                         data['senderId'] == _auth.currentUser?.uid;
                     final bool isAnn = data['type'] == 'announcement';
                     final bool canDelete = isMe || widget.isOwner;
                     final String senderName = data['senderName'] ??
-                        data['senderEmail']?.toString().split('@')[0] ??
+                        data['senderEmail']
+                            ?.toString()
+                            .split('@')[0] ??
                         'Bilinmeyen';
-                    final String timeStr =
-                        _formatTime(data['createdAt'] as Timestamp?);
+                    final String timeStr = _formatTime(
+                        data['createdAt'] as Timestamp?);
                     final bool isOwnerMsg =
                         data['senderId'] == widget.ownerId;
                     final String? base64 = data['base64Data'];
                     final String? fname = data['fileName'];
                     final bool isImg = fname != null &&
-                        RegExp(r'\.(jpg|jpeg|png|webp|gif)$',
-                                caseSensitive: false)
-                            .hasMatch(fname);
+                        RegExp(
+                          r'\.(jpg|jpeg|png|webp|gif)$',
+                          caseSensitive: false,
+                        ).hasMatch(fname);
 
                     if (isAnn) {
                       return _buildAnnouncementCard(
@@ -677,25 +719,33 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // ─── يكتب الآن ────────────────────────────────────────────────
+          // ─── يكتب الآن ───────────────────────────────────────
           StreamBuilder<DocumentSnapshot>(
-            stream: _firestore.collection('typing').doc(widget.channelId).snapshots(),
+            stream: _firestore
+                .collection('typing')
+                .doc(widget.channelId)
+                .snapshots(),
             builder: (ctx, snap) {
-              if (!snap.hasData || !snap.data!.exists) return const SizedBox();
-              final data = snap.data!.data() as Map<String, dynamic>? ?? {};
+              if (!snap.hasData || !snap.data!.exists)
+                return const SizedBox();
+              final data =
+                  snap.data!.data() as Map<String, dynamic>? ?? {};
               final myUid = _auth.currentUser?.uid ?? '';
-              final others = data.entries.where((e) => e.key != myUid).toList();
+              final others = data.entries
+                  .where((e) => e.key != myUid)
+                  .toList();
               if (others.isEmpty) return const SizedBox();
               final names = others.map((e) {
                 final v = e.value;
                 return v is Map ? (v['name'] ?? 'Biri') : 'Biri';
               }).join(', ');
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 6),
                 color: Colors.white,
                 child: Row(
                   children: [
-                    _TypingDots(),
+                    const _TypingDots(),
                     const SizedBox(width: 8),
                     Text(
                       '$names yazıyor...',
@@ -740,14 +790,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ─── DUYURU KARTI ─────────────────────────────────────────────────────────────
+  // ─── DUYURU KARTI ────────────────────────────────────────────
   Widget _buildAnnouncementCard(
     String docId, Map data, String sender, String time,
     bool isOwnerMsg, String? base64, String? fname,
     bool isImg, bool canDelete,
   ) {
     return GestureDetector(
-      onLongPress: () => _showMessageOptions(docId, data, data['senderId'] == _auth.currentUser?.uid),
+      onLongPress: () => _showMessageOptions(docId, data,
+          data['senderId'] == _auth.currentUser?.uid),
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),
         decoration: BoxDecoration(
@@ -781,7 +832,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius:
+                                    BorderRadius.circular(8),
                               ),
                               child: const Icon(Icons.campaign,
                                   color: Colors.orange, size: 18),
@@ -819,7 +871,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           children: [
                             CircleAvatar(
                               radius: 11,
-                              backgroundColor: const Color(0xFFEEF2FF),
+                              backgroundColor:
+                                  const Color(0xFFEEF2FF),
                               child: Text(
                                 sender[0].toUpperCase(),
                                 style: const TextStyle(
@@ -844,12 +897,14 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             if (isOwnerMsg)
                               Container(
-                                margin: const EdgeInsets.only(left: 4),
+                                margin:
+                                    const EdgeInsets.only(left: 4),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius:
+                                      BorderRadius.circular(4),
                                 ),
                                 child: const Text(
                                   'Kurucu',
@@ -871,13 +926,19 @@ class _ChatScreenState extends State<ChatScreen> {
                           ],
                         ),
                         if (data['reactions'] != null)
-                          _buildReactions(Map<String, dynamic>.from(data['reactions']), docId),
+                          _buildReactions(
+                              Map<String, dynamic>.from(
+                                  data['reactions']),
+                              docId),
                         if (data['edited'] == true)
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               '(düzenlendi)',
-                              style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade400,
+                                  fontStyle: FontStyle.italic),
                             ),
                           ),
                       ],
@@ -892,7 +953,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ─── MESAJ BALONCUĞU ──────────────────────────────────────────────────────────
+  // ─── MESAJ BALONCUĞU ─────────────────────────────────────────
   Widget _buildMessageBubble(
     String docId, Map data, bool isMe, String sender, String time,
     bool isOwnerMsg, String? base64, String? fname,
@@ -930,7 +991,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   if (!isMe)
                     Padding(
-                      padding: const EdgeInsets.only(left: 4, bottom: 3),
+                      padding:
+                          const EdgeInsets.only(left: 4, bottom: 3),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -947,12 +1009,14 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           if (isOwnerMsg)
                             Container(
-                              margin: const EdgeInsets.only(left: 5),
+                              margin:
+                                  const EdgeInsets.only(left: 5),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 5, vertical: 1),
                               decoration: BoxDecoration(
                                 color: Colors.green.shade50,
-                                borderRadius: BorderRadius.circular(4),
+                                borderRadius:
+                                    BorderRadius.circular(4),
                               ),
                               child: const Text(
                                 'Kurucu',
@@ -990,46 +1054,61 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                       border: isMe
                           ? null
-                          : Border.all(color: Colors.grey.shade200),
+                          : Border.all(
+                              color: Colors.grey.shade200),
                     ),
                     child: Column(
                       crossAxisAlignment: isMe
                           ? CrossAxisAlignment.end
                           : CrossAxisAlignment.start,
                       children: [
-                        // Reply gösteri
+                        // Reply göster
                         if (data['replyTo'] != null)
                           Container(
-                            margin: const EdgeInsets.only(bottom: 6),
+                            margin:
+                                const EdgeInsets.only(bottom: 6),
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(8),
-                              border: const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 2)),
+                              color:
+                                  Colors.black.withOpacity(0.06),
+                              borderRadius:
+                                  BorderRadius.circular(8),
+                              border: const Border(
+                                  left: BorderSide(
+                                      color: Color(0xFF4F46E5),
+                                      width: 2)),
                             ),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  data['replyTo']['senderName'] ?? '',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                  data['replyTo']['senderName'] ??
+                                      '',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11),
                                 ),
                                 Text(
                                   data['replyTo']['text'] ?? '',
-                                  style: const TextStyle(fontSize: 11),
+                                  style: const TextStyle(
+                                      fontSize: 11),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
                           ),
-                          
+
                         if (base64 != null)
-                          _buildFileWidget(base64, fname, isImg, isMe),
-                        if ((data['text'] ?? '').toString().isNotEmpty)
+                          _buildFileWidget(
+                              base64, fname, isImg, isMe),
+                        if ((data['text'] ?? '')
+                            .toString()
+                            .isNotEmpty)
                           Padding(
-                            padding:
-                                EdgeInsets.only(top: base64 != null ? 6 : 0),
+                            padding: EdgeInsets.only(
+                                top: base64 != null ? 6 : 0),
                             child: Text(
                               data['text'],
                               style: TextStyle(
@@ -1068,7 +1147,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         '(düzenlendi)',
-                        style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade400,
+                            fontStyle: FontStyle.italic),
                       ),
                     ),
                 ],
@@ -1081,7 +1163,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ─── DOSYA/RESİM WİDGET — WEB UYUMLU ─────────────────────────────────────────
+  // ─── DOSYA/RESİM WİDGET ──────────────────────────────────────
   Widget _buildFileWidget(
       String base64, String? fname, bool isImg, bool isMe) {
     if (isImg) {
@@ -1139,7 +1221,9 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Text(
                 fname ?? 'Dosya',
                 style: TextStyle(
-                  color: isMe ? Colors.white : const Color(0xFF4F46E5),
+                  color: isMe
+                      ? Colors.white
+                      : const Color(0xFF4F46E5),
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
                 ),
@@ -1158,8 +1242,9 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
-  
-  Widget _buildReactions(Map<String, dynamic>? reactions, String docId) {
+
+  Widget _buildReactions(
+      Map<String, dynamic>? reactions, String docId) {
     if (reactions == null || reactions.isEmpty) return const SizedBox();
     final myUid = _auth.currentUser?.uid ?? '';
     return Padding(
@@ -1175,7 +1260,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? _removeReaction(docId, e.key)
                 : _addReaction(docId, e.key),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: iReacted
                     ? const Color(0xFFEEF2FF)
@@ -1198,7 +1284,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ─── GİRİŞ ÇUBUĞU ─────────────────────────────────────────────────────────────
+  // ─── GİRİŞ ÇUBUĞU ────────────────────────────────────────────
   Widget _buildInputBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -1218,15 +1304,18 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ─── Reply şeridi ─────────────────────────────────────────────
+            // Reply şeridi
             if (_replyingTo != null)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEEF2FF),
                   borderRadius: BorderRadius.circular(10),
-                  border: const Border(left: BorderSide(color: Color(0xFF4F46E5), width: 3)),
+                  border: const Border(
+                      left: BorderSide(
+                          color: Color(0xFF4F46E5), width: 3)),
                 ),
                 child: Row(
                   children: [
@@ -1244,7 +1333,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           Text(
                             _replyingTo!['text'] ?? '',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                            style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1252,8 +1343,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => setState(() => _replyingTo = null),
-                      child: const Icon(Icons.close, size: 18, color: Colors.grey),
+                      onTap: () =>
+                          setState(() => _replyingTo = null),
+                      child: const Icon(Icons.close,
+                          size: 18, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -1271,13 +1364,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _toggleBtn('💬 Gönderi', !_isAnnouncement, () {
+                      _toggleBtn('💬 Gönderi', !_isAnnouncement,
+                          () {
                         setState(() {
                           _isAnnouncement = false;
                           _titleController.clear();
                         });
                       }),
-                      _toggleBtn('📢 Duyuru', _isAnnouncement, () {
+                      _toggleBtn('📢 Duyuru', _isAnnouncement,
+                          () {
                         setState(() => _isAnnouncement = true);
                       }),
                     ],
@@ -1304,15 +1399,16 @@ class _ChatScreenState extends State<ChatScreen> {
                     prefixIcon: const Icon(Icons.title,
                         color: Colors.orange, size: 18),
                     border: const UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.orange),
+                      borderSide:
+                          BorderSide(color: Colors.orange),
                     ),
                     focusedBorder: const UnderlineInputBorder(
-                      borderSide:
-                          BorderSide(color: Colors.orange, width: 2),
+                      borderSide: BorderSide(
+                          color: Colors.orange, width: 2),
                     ),
                     enabledBorder: UnderlineInputBorder(
-                      borderSide:
-                          BorderSide(color: Colors.grey.shade300),
+                      borderSide: BorderSide(
+                          color: Colors.grey.shade300),
                     ),
                     contentPadding:
                         const EdgeInsets.symmetric(vertical: 8),
@@ -1330,13 +1426,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Container(
                     width: 42,
                     height: 42,
-                    margin:
-                        const EdgeInsets.only(right: 8, bottom: 1),
+                    margin: const EdgeInsets.only(
+                        right: 8, bottom: 1),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       shape: BoxShape.circle,
-                      border:
-                          Border.all(color: Colors.grey.shade200),
+                      border: Border.all(
+                          color: Colors.grey.shade200),
                     ),
                     child: _isUploading
                         ? const Padding(
@@ -1355,8 +1451,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(22),
-                      border:
-                          Border.all(color: Colors.grey.shade200),
+                      border: Border.all(
+                          color: Colors.grey.shade200),
                     ),
                     child: TextField(
                       controller: _messageController,
@@ -1414,11 +1510,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
             Padding(
-              padding: const EdgeInsets.only(top: 4, left: 52),
+              padding:
+                  const EdgeInsets.only(top: 4, left: 52),
               child: Text(
                 'Maks. 700 KB',
                 style: TextStyle(
-                    fontSize: 10, color: Colors.grey.shade400),
+                    fontSize: 10,
+                    color: Colors.grey.shade400),
               ),
             ),
           ],
@@ -1464,7 +1562,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+// ─── Yazıyor animasyonu ───────────────────────────────────────────
 class _TypingDots extends StatefulWidget {
+  const _TypingDots();
+
   @override
   State<_TypingDots> createState() => _TypingDotsState();
 }
@@ -1481,25 +1582,34 @@ class _TypingDotsState extends State<_TypingDots>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..repeat(reverse: true);
-    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+    _anim =
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _anim,
       child: Row(
-        children: List.generate(3, (i) => Container(
-          width: 6, height: 6,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade400,
-            shape: BoxShape.circle,
+        children: List.generate(
+          3,
+          (i) => Container(
+            width: 6,
+            height: 6,
+            margin:
+                const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              shape: BoxShape.circle,
+            ),
           ),
-        )),
+        ),
       ),
     );
   }
